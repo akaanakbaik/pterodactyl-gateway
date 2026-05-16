@@ -1,7 +1,7 @@
 {
   "name": "@akaanakbaik/pterodactyl-gateway",
   "version": "1.0.0",
-  "description": "SDK, CLI, dan smart gateway TypeScript untuk Pterodactyl Panel.",
+  "description": "TypeScript SDK dan CLI untuk Pterodactyl Panel: create user/server, bot integration, dashboard automation, file manager, backups, schedules, dan server control.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,8 +21,10 @@
     "README.md",
     "BLUEPRINT.md",
     "add-promt.md",
-    "LICENSE"
+    "LICENSE",
+    "SECURITY.md"
   ],
+  "sideEffects": false,
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc -p tsconfig.json && npm run chmod:bin",
@@ -32,6 +34,8 @@
     "test:cli": "npm run build && node dist/cli-entry.js help && ./dist/cli-entry.js help && node dist/cli-entry.js version && node dist/cli-entry.js self-check && node dist/cli-entry.js release-check && node dist/cli-entry.js presets && node dist/cli-entry.js templates list && node dist/cli-entry.js config help && node dist/cli-entry.js config doctor && node dist/cli-entry.js explain DOMAIN_REQUIRED && node dist/cli-entry.js env-template && node dist/wizard-cli.js help && ./dist/wizard-cli.js help",
     "test:pack": "npm run build && npm pack --dry-run",
     "test:release": "node scripts/release-guard.js",
+    "security:audit": "npm audit --audit-level=high",
+    "ci": "npm run verify && npm run security:audit",
     "cli": "node dist/cli-entry.js",
     "wizard": "node dist/wizard-cli.js",
     "verify": "npm run typecheck && npm test && npm run test:cli && npm run test:release && npm run test:pack",
@@ -42,12 +46,42 @@
     "pterodactyl-panel",
     "pterodactyl-api",
     "pterodactyl-sdk",
+    "pterodactyl-cli",
+    "pterodactyl-client",
+    "pterodactyl-application-api",
+    "pterodactyl-client-api",
     "pterodactyl-gateway",
     "server-control",
-    "typescript"
+    "server-management",
+    "game-panel",
+    "hosting-panel",
+    "panel-automation",
+    "bot-hosting",
+    "whatsapp-bot",
+    "telegram-bot",
+    "discord-bot",
+    "baileys",
+    "grammy",
+    "discordjs",
+    "dashboard",
+    "typescript",
+    "nodejs",
+    "sdk",
+    "cli"
   ],
   "author": "akaanakbaik",
   "license": "MIT",
+  "homepage": "https://github.com/akaanakbaik/pterodactyl-gateway#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akaanakbaik/pterodactyl-gateway.git"
+  },
+  "bugs": {
+    "url": "https://github.com/akaanakbaik/pterodactyl-gateway/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=18"
   },
