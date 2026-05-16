@@ -1,7 +1,7 @@
 import { PteroError } from "./errors.js";
 import { HttpCore } from "./http.js";
 import { buildServerPayload, buildUserPayload, normalizeSpecs, normalizeUserResponse, progress, selectAllocations, validateCreateInput } from "./smart.js";
-import { ConnectResult, CreateSmartServerInput, CreateUserSmartInput, DoctorReport, NormalizedServer, OperationOptions, PteroConfig, PteroMode, ServerPowerSignal } from "./types.js";
+import { ConnectResult, CreateSmartServerInput, CreateUserSmartInput, DoctorReport, NormalizedServer, OperationOptions, PreviewCreateServer, PteroConfig, PteroMode, ServerPowerSignal } from "./types.js";
 import { asObject, getDataAttributes, maskSecret, normalizeDomain } from "./utils.js";
 
 export class PteroGateway {
