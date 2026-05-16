@@ -83,7 +83,7 @@ async function main() {
     if (scope === "server") {
       const serverId = args[2];
       const action = args[3];
-      if (!serverId || !action) throw new Error("Format: ptero-gateway admin server <serverId> <detail|limits|update-limits>");
+      if (!serverId || !action) throw new Error("Format: ptero-gateway admin server <serverId> <detail|limits|update-limits|suspend|unsuspend|reinstall>");
 
       if (action === "detail") {
         const result = await ptero.raw.application.get(`/servers/${serverId}`);
@@ -103,6 +103,24 @@ async function main() {
         const payload = buildLimitPayload(current);
         const result = await ptero.raw.application.patch(`/servers/${serverId}/build`, payload);
         output(result, "Limit server berhasil di-update.");
+        return;
+      }
+
+      if (action === "suspend") {
+        requireYes("suspend server");
+        output(await ptero.raw.application.post(`/servers/${serverId}/suspend`), `Server ${serverId} berhasil di-suspend.`);
+        return;
+      }
+
+      if (action === "unsuspend") {
+        requireYes("unsuspend server");
+        output(await ptero.raw.application.post(`/servers/${serverId}/unsuspend`), `Server ${serverId} berhasil di-unsuspend.`);
+        return;
+      }
+
+      if (action === "reinstall") {
+        requireYes("reinstall server");
+        output(await ptero.raw.application.post(`/servers/${serverId}/reinstall`), `Server ${serverId} berhasil diminta reinstall.`);
         return;
       }
     }
@@ -178,6 +196,15 @@ async function main() {
       if (!allowAnyPath && !isSafeTmpPath(file)) throw new Error("Demi keamanan, write via CLI default hanya boleh ke /tmp/. Tambahkan --allow-any-path jika benar-benar ingin menulis ke path lain.");
       output(await server.files.write(file, content), `File berhasil ditulis: ${file}`);
     }
+    else if (action === "init-node-alive") {
+      requireYes("init node alive template");
+      const packageJson = JSON.stringify({ scripts: { start: "node index.js" }, dependencies: {} });
+      const indexJs = 'console.log("running"); setInterval(() => console.log("tick", new Date().toISOString()), 30000);';
+      await server.files.write("/package.json", packageJson);
+      await server.files.write("/index.js", indexJs);
+      await server.startup.set("CMD_RUN", "node index.js");
+      output({ ok: true }, "Template Node alive berhasil dipasang. Jalankan: ptero-gateway server <identifier> start --yes");
+    }
     else if (action === "startup" || action === "env") {
       const result = await server.startup.variables();
       output(result, formatStartup(result));
@@ -200,6 +227,18 @@ async function main() {
     else if (action === "backups") {
       const result = await server.backups.list();
       output(result, formatNamedList(result, "backup"));
+    }
+    else if (action === "backup") {
+      const backupId = args[3];
+      if (!backupId) throw new Error("Format: ptero-gateway server <identifier> backup <uuid>");
+      const result = await server.backups.details(backupId);
+      output(result, formatBackupDetail(result));
+    }
+    else if (action === "delete-backup") {
+      requireYes("delete backup");
+      const backupId = args[3];
+      if (!backupId) throw new Error("Format: ptero-gateway server <identifier> delete-backup <uuid> --yes");
+      output(await server.backups.delete(backupId), `Backup ${backupId} berhasil dihapus.`);
     }
     else if (action === "create-backup") {
       requireYes("create backup");
@@ -490,6 +529,20 @@ function formatAdminServerLimits(raw: unknown): string {
   return table(rows, ["name", "value"]);
 }
 
+function formatBackupDetail(raw: unknown): string {
+  const attributes = getAttributes(raw);
+  return [
+    `UUID: ${attributes.uuid ?? "-"}`,
+    `Name: ${attributes.name ?? "-"}`,
+    `Successful: ${attributes.is_successful ? "yes" : "no"}`,
+    `Locked: ${attributes.is_locked ? "yes" : "no"}`,
+    `Bytes: ${formatBytes(Number(attributes.bytes ?? 0))}`,
+    `Checksum: ${attributes.checksum ?? "-"}`,
+    `Created: ${attributes.created_at ?? "-"}`,
+    `Completed: ${attributes.completed_at ?? "-"}`
+  ].join("\n");
+}
+
 function formatDryRun(title: string, raw: unknown): string {
   const root = asRecord(raw);
   const payload = asRecord(root.payload);
@@ -608,6 +661,9 @@ Perintah:
   ptero-gateway admin server <serverId> detail [--json]
   ptero-gateway admin server <serverId> limits [--json]
   ptero-gateway admin server <serverId> update-limits --backups 1 --yes
+  ptero-gateway admin server <serverId> suspend --yes
+  ptero-gateway admin server <serverId> unsuspend --yes
+  ptero-gateway admin server <serverId> reinstall --yes
   ptero-gateway probe <identifier> [--json]
   ptero-gateway server <identifier> summary [--json]
   ptero-gateway server <identifier> resources [--json]
@@ -617,9 +673,12 @@ Perintah:
   ptero-gateway server <identifier> network|ports [--json]
   ptero-gateway server <identifier> databases [--json]
   ptero-gateway server <identifier> backups [--json]
+  ptero-gateway server <identifier> backup <uuid> [--json]
+  ptero-gateway server <identifier> delete-backup <uuid> --yes
   ptero-gateway server <identifier> schedules [--json]
   ptero-gateway server <identifier> write /tmp/test.txt "isi file" --yes
   ptero-gateway server <identifier> write /index.js "isi file" --yes --allow-any-path
+  ptero-gateway server <identifier> init-node-alive --yes
   ptero-gateway server <identifier> set-env KEY VALUE --yes
   ptero-gateway server <identifier> create-backup --name "backup-name" --yes
   ptero-gateway server <identifier> start --yes
