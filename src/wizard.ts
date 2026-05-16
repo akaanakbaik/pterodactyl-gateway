@@ -231,11 +231,11 @@ function printWizardHelp() {
   console.log(`Akadev Pterodactyl Gateway Wizard
 
 Perintah:
-  ptero-gateway wizard create-user
-  ptero-gateway wizard create-user --dry-run
-  ptero-gateway wizard create-server
-  ptero-gateway wizard create-server --dry-run
-  ptero-gateway wizard create-server --yes
+  ptero-wizard create-user
+  ptero-wizard create-user --dry-run
+  ptero-wizard create-server
+  ptero-wizard create-server --dry-run
+  ptero-wizard create-server --yes
 
 Catatan:
   Wizard tidak mengelola node/location/allocation.
