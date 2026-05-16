@@ -71,7 +71,9 @@ export function asObject(value: unknown): Record<string, unknown> {
 export function getDataAttributes(value: unknown): Record<string, unknown> {
   const root = asObject(value);
   const data = asObject(root.data);
-  return asObject(data.attributes);
+  const dataAttributes = asObject(data.attributes);
+  if (Object.keys(dataAttributes).length > 0) return dataAttributes;
+  return asObject(root.attributes);
 }
 
 export function getCollection(value: unknown): Record<string, unknown>[] {
