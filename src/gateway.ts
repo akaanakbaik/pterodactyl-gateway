@@ -21,7 +21,7 @@ export class PteroGateway {
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
     this.timeout = config.timeout ?? 15000;
-    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/0.2.1";
+    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/0.2.2";
     this.safeMode = config.safeMode ?? true;
     this.presets = config.presets ?? {};
     this.http = new HttpCore({
@@ -306,6 +306,32 @@ export class PteroServerHandle {
     };
   }
 
+  get backups() {
+    return {
+      list: () => this.gateway.raw.client.get(`/servers/${this.identifier}/backups`),
+      create: (input: { name?: string; ignored?: string[]; isLocked?: boolean } = {}) => this.gateway.raw.client.post(`/servers/${this.identifier}/backups`, { name: input.name, ignored: input.ignored ?? [], is_locked: input.isLocked ?? false }),
+      details: (backupId: string) => this.gateway.raw.client.get(`/servers/${this.identifier}/backups/${backupId}`),
+      download: (backupId: string) => this.gateway.raw.client.get(`/servers/${this.identifier}/backups/${backupId}/download`),
+      delete: (backupId: string) => this.gateway.raw.client.delete(`/servers/${this.identifier}/backups/${backupId}`)
+    };
+  }
+
+  get schedules() {
+    return {
+      list: () => this.gateway.raw.client.get(`/servers/${this.identifier}/schedules`),
+      create: (input: { name: string; minute: string; hour: string; dayOfMonth: string; month: string; dayOfWeek: string; isActive?: boolean; onlyWhenOnline?: boolean }) => this.gateway.raw.client.post(`/servers/${this.identifier}/schedules`, { name: input.name, minute: input.minute, hour: input.hour, day_of_month: input.dayOfMonth, month: input.month, day_of_week: input.dayOfWeek, is_active: input.isActive ?? true, only_when_online: input.onlyWhenOnline ?? false }),
+      details: (scheduleId: number) => this.gateway.raw.client.get(`/servers/${this.identifier}/schedules/${scheduleId}`),
+      update: (scheduleId: number, input: { name?: string; minute?: string; hour?: string; dayOfMonth?: string; month?: string; dayOfWeek?: string; isActive?: boolean; onlyWhenOnline?: boolean }) => this.gateway.raw.client.post(`/servers/${this.identifier}/schedules/${scheduleId}`, mapScheduleInput(input)),
+      run: (scheduleId: number) => this.gateway.raw.client.post(`/servers/${this.identifier}/schedules/${scheduleId}/execute`),
+      delete: (scheduleId: number) => this.gateway.raw.client.delete(`/servers/${this.identifier}/schedules/${scheduleId}`),
+      tasks: {
+        create: (scheduleId: number, input: { action: string; payload: string; timeOffset?: number; continueOnFailure?: boolean }) => this.gateway.raw.client.post(`/servers/${this.identifier}/schedules/${scheduleId}/tasks`, { action: input.action, payload: input.payload, time_offset: input.timeOffset ?? 0, continue_on_failure: input.continueOnFailure ?? false }),
+        update: (scheduleId: number, taskId: number, input: { action?: string; payload?: string; timeOffset?: number; continueOnFailure?: boolean }) => this.gateway.raw.client.post(`/servers/${this.identifier}/schedules/${scheduleId}/tasks/${taskId}`, mapTaskInput(input)),
+        delete: (scheduleId: number, taskId: number) => this.gateway.raw.client.delete(`/servers/${this.identifier}/schedules/${scheduleId}/tasks/${taskId}`)
+      }
+    };
+  }
+
   resources() {
     return this.gateway.raw.client.get(`/servers/${this.identifier}/resources`);
   }
@@ -334,6 +360,28 @@ export class PteroServerHandle {
     if (!options?.allowDangerous && isDangerousCommand(command)) throw new PteroError({ code: "DANGEROUS_COMMAND_BLOCKED", message: "Command terlihat berbahaya dan diblokir oleh safe mode.", hint: "Gunakan allowDangerous: true hanya jika benar-benar paham risikonya." });
     return this.gateway.raw.client.post(`/servers/${this.identifier}/command`, { command });
   }
+}
+
+function mapScheduleInput(input: { name?: string; minute?: string; hour?: string; dayOfMonth?: string; month?: string; dayOfWeek?: string; isActive?: boolean; onlyWhenOnline?: boolean }): Record<string, unknown> {
+  const output: Record<string, unknown> = {};
+  if (input.name !== undefined) output.name = input.name;
+  if (input.minute !== undefined) output.minute = input.minute;
+  if (input.hour !== undefined) output.hour = input.hour;
+  if (input.dayOfMonth !== undefined) output.day_of_month = input.dayOfMonth;
+  if (input.month !== undefined) output.month = input.month;
+  if (input.dayOfWeek !== undefined) output.day_of_week = input.dayOfWeek;
+  if (input.isActive !== undefined) output.is_active = input.isActive;
+  if (input.onlyWhenOnline !== undefined) output.only_when_online = input.onlyWhenOnline;
+  return output;
+}
+
+function mapTaskInput(input: { action?: string; payload?: string; timeOffset?: number; continueOnFailure?: boolean }): Record<string, unknown> {
+  const output: Record<string, unknown> = {};
+  if (input.action !== undefined) output.action = input.action;
+  if (input.payload !== undefined) output.payload = input.payload;
+  if (input.timeOffset !== undefined) output.time_offset = input.timeOffset;
+  if (input.continueOnFailure !== undefined) output.continue_on_failure = input.continueOnFailure;
+  return output;
 }
 
 function isDangerousCommand(command: string): boolean {
