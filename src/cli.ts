@@ -5,7 +5,8 @@ const rawArgs = process.argv.slice(2);
 const jsonMode = rawArgs.includes("--json");
 const yesMode = rawArgs.includes("--yes") || rawArgs.includes("-y");
 const dryRunMode = rawArgs.includes("--dry-run");
-const args = rawArgs.filter(arg => arg !== "--json" && arg !== "--yes" && arg !== "-y" && arg !== "--dry-run");
+const allowAnyPath = rawArgs.includes("--allow-any-path");
+const args = rawArgs.filter(arg => arg !== "--json" && arg !== "--yes" && arg !== "-y" && arg !== "--dry-run" && arg !== "--allow-any-path");
 const command = args[0] ?? "help";
 
 async function main() {
@@ -174,7 +175,7 @@ async function main() {
       const file = args[3];
       const content = args.slice(4).join(" ");
       if (!file || !content) throw new Error("Format: ptero-gateway server <identifier> write /tmp/test.txt \"isi file\" --yes");
-      if (!isSafeTmpPath(file)) throw new Error("Demi keamanan, write via CLI hanya boleh ke /tmp/. Contoh: /tmp/test.txt");
+      if (!allowAnyPath && !isSafeTmpPath(file)) throw new Error("Demi keamanan, write via CLI default hanya boleh ke /tmp/. Tambahkan --allow-any-path jika benar-benar ingin menulis ke path lain.");
       output(await server.files.write(file, content), `File berhasil ditulis: ${file}`);
     }
     else if (action === "startup" || action === "env") {
@@ -270,6 +271,8 @@ function buildCreateServerInput() {
     nodeId: getNumberOption("--node", 1),
     nestId: getNumberOption("--nest", 5),
     eggId: getNumberOption("--egg", 18),
+    dockerImage: getOption("--docker-image") ?? "auto",
+    startup: getOption("--startup") ?? "auto",
     specs: {
       memory: getOption("--memory") ?? "1GB",
       disk: getOption("--disk") ?? "2GB",
@@ -616,6 +619,7 @@ Perintah:
   ptero-gateway server <identifier> backups [--json]
   ptero-gateway server <identifier> schedules [--json]
   ptero-gateway server <identifier> write /tmp/test.txt "isi file" --yes
+  ptero-gateway server <identifier> write /index.js "isi file" --yes --allow-any-path
   ptero-gateway server <identifier> set-env KEY VALUE --yes
   ptero-gateway server <identifier> create-backup --name "backup-name" --yes
   ptero-gateway server <identifier> start --yes
