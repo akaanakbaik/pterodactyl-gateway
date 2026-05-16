@@ -59,6 +59,48 @@ test("server command guard memblokir command berbahaya", () => {
   assert.throws(() => ptero.server("abc123").command("rm -rf /"), /Command terlihat berbahaya/);
 });
 
+test("file manager read write dan json helper memakai endpoint benar", async () => {
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method ?? "GET", body: init?.body });
+    const target = String(url);
+    if (target.includes("/files/contents")) return new Response('{"ok":true}', { status: 200, headers: { "Content-Type": "text/plain" } });
+    return json({ ok: true });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  const server = ptero.server("abc123");
+  const text = await server.files.read("/config.json");
+  await server.files.write("/index.js", "console.log('ok')");
+  const data = await server.files.json.read("/config.json");
+
+  assert.equal(text, '{"ok":true}');
+  assert.deepEqual(data, { ok: true });
+  assert.equal(calls[0].method, "GET");
+  assert.match(calls[0].url, /files\/contents/);
+  assert.equal(calls[1].method, "PUT");
+  assert.match(String(calls[1].body), /console\.log/);
+});
+
+test("startup set mencari variable lalu update value", async () => {
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method ?? "GET", body: init?.body });
+    if ((init?.method ?? "GET") === "GET") {
+      return json({ data: { attributes: { relationships: { variables: { data: [
+        { attributes: { env_variable: "BOT_TOKEN", server_value: "old" } }
+      ] } } } } });
+    }
+    return json({ ok: true });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  await ptero.server("abc123").startup.set("BOT_TOKEN", "new-token");
+
+  assert.equal(calls[0].method, "GET");
+  assert.equal(calls[1].method, "PUT");
+  assert.match(calls[1].url, /startup\/variable/);
+  assert.deepEqual(JSON.parse(String(calls[1].body)), { key: "BOT_TOKEN", value: "new-token" });
+});
+
 test("createSmart dryRun membangun payload otomatis", async () => {
   const fetcher = async (url) => {
     const target = String(url);
