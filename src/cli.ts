@@ -31,6 +31,15 @@ async function main() {
     return;
   }
 
+  if (command === "probe") {
+    const id = args[1];
+    if (!id) throw new Error("Format: ptero-gateway probe <identifier>");
+    const report = await ptero.server(id).probe();
+    console.log(JSON.stringify(report, null, 2));
+    process.exitCode = report.ok ? 0 : 1;
+    return;
+  }
+
   if (command === "server") {
     const id = args[1];
     const action = args[2];
@@ -57,6 +66,7 @@ Perintah:
   ptero-gateway connect
   ptero-gateway ids
   ptero-gateway ids --nest <nestId>
+  ptero-gateway probe <identifier>
   ptero-gateway server <identifier> resources
   ptero-gateway server <identifier> start
   ptero-gateway server <identifier> stop
