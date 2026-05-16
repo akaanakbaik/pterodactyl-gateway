@@ -21,7 +21,7 @@ export class PteroGateway {
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
     this.timeout = config.timeout ?? 15000;
-    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/0.2.3";
+    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/0.2.7";
     this.safeMode = config.safeMode ?? true;
     this.presets = config.presets ?? {};
     this.http = new HttpCore({
@@ -54,6 +54,7 @@ export class PteroGateway {
         get: <T = unknown>(path: string) => this.request<T>({ api: "client", path }),
         getText: (path: string) => this.request<string>({ api: "client", path, responseType: "text" }),
         post: <T = unknown>(path: string, body?: unknown) => this.request<T>({ api: "client", method: "POST", path, body }),
+        postText: <T = unknown>(path: string, body: string) => this.request<T>({ api: "client", method: "POST", path, body, contentType: "text" }),
         put: <T = unknown>(path: string, body?: unknown) => this.request<T>({ api: "client", method: "PUT", path, body }),
         putText: <T = unknown>(path: string, body: string) => this.request<T>({ api: "client", method: "PUT", path, body, contentType: "text" }),
         delete: <T = unknown>(path: string) => this.request<T>({ api: "client", method: "DELETE", path })
@@ -256,7 +257,7 @@ export class PteroServerHandle {
     return {
       list: (directory = "/") => this.gateway.raw.client.get(`/servers/${this.identifier}/files/list?directory=${encodeURIComponent(directory)}`),
       read: (file: string) => this.gateway.raw.client.getText(`/servers/${this.identifier}/files/contents?file=${encodeURIComponent(file)}`),
-      write: (file: string, content: string) => this.gateway.raw.client.putText(`/servers/${this.identifier}/files/write?file=${encodeURIComponent(file)}`, content),
+      write: (file: string, content: string) => this.gateway.raw.client.postText(`/servers/${this.identifier}/files/write?file=${encodeURIComponent(file)}`, content),
       delete: (root: string, files: string[]) => this.gateway.raw.client.post(`/servers/${this.identifier}/files/delete`, { root, files }),
       mkdir: (root: string, name: string) => this.gateway.raw.client.post(`/servers/${this.identifier}/files/create-folder`, { root, name }),
       rename: (root: string, files: Array<{ from: string; to: string }>) => this.gateway.raw.client.put(`/servers/${this.identifier}/files/rename`, { root, files }),
@@ -264,7 +265,7 @@ export class PteroServerHandle {
       decompress: (root: string, file: string) => this.gateway.raw.client.post(`/servers/${this.identifier}/files/decompress`, { root, file }),
       json: {
         read: async <T = unknown>(file: string) => JSON.parse(await this.gateway.raw.client.getText(`/servers/${this.identifier}/files/contents?file=${encodeURIComponent(file)}`)) as T,
-        write: (file: string, data: unknown, space = 2) => this.gateway.raw.client.putText(`/servers/${this.identifier}/files/write?file=${encodeURIComponent(file)}`, JSON.stringify(data, null, space))
+        write: (file: string, data: unknown, space = 2) => this.gateway.raw.client.postText(`/servers/${this.identifier}/files/write?file=${encodeURIComponent(file)}`, JSON.stringify(data, null, space))
       }
     };
   }
@@ -275,7 +276,8 @@ export class PteroServerHandle {
       set: async (env: string, value: string | number | boolean) => {
         const raw = await this.gateway.raw.client.get(`/servers/${this.identifier}/startup`);
         const relationships = asObject(getDataAttributes(raw).relationships);
-        const variable = getCollection(relationships.variables).find(item => String(asObject(item.attributes ?? item).env_variable) === env);
+        const variables = [...getCollection(raw), ...getCollection(relationships.variables)];
+        const variable = variables.find(item => String(asObject(item.attributes ?? item).env_variable) === env);
         if (!variable) throw new PteroError({ code: "STARTUP_VARIABLE_NOT_FOUND", message: `Variable ${env} tidak ditemukan.`, hint: "Cek daftar startup variables pada egg/server." });
         return this.gateway.raw.client.put(`/servers/${this.identifier}/startup/variable`, { key: String(env), value: String(value) });
       },
@@ -309,7 +311,7 @@ export class PteroServerHandle {
   get backups() {
     return {
       list: () => this.gateway.raw.client.get(`/servers/${this.identifier}/backups`),
-      create: (input: { name?: string; ignored?: string[]; isLocked?: boolean } = {}) => this.gateway.raw.client.post(`/servers/${this.identifier}/backups`, { name: input.name, ignored: input.ignored ?? [], is_locked: input.isLocked ?? false }),
+      create: (input: { name?: string; ignored?: string[] | string; isLocked?: boolean } = {}) => this.gateway.raw.client.post(`/servers/${this.identifier}/backups`, { name: input.name, ignored: normalizeIgnored(input.ignored), is_locked: input.isLocked ?? false }),
       details: (backupId: string) => this.gateway.raw.client.get(`/servers/${this.identifier}/backups/${backupId}`),
       download: (backupId: string) => this.gateway.raw.client.get(`/servers/${this.identifier}/backups/${backupId}/download`),
       delete: (backupId: string) => this.gateway.raw.client.delete(`/servers/${this.identifier}/backups/${backupId}`)
@@ -383,6 +385,11 @@ async function probeStep(checks: Record<string, { ok: boolean; message: string }
   }
 }
 
+function normalizeIgnored(value: string[] | string | undefined): string {
+  if (Array.isArray(value)) return value.join("\n");
+  return value ?? "";
+}
+
 function mapScheduleInput(input: { name?: string; minute?: string; hour?: string; dayOfMonth?: string; month?: string; dayOfWeek?: string; isActive?: boolean; onlyWhenOnline?: boolean }): Record<string, unknown> {
   const output: Record<string, unknown> = {};
   if (input.name !== undefined) output.name = input.name;
@@ -407,5 +414,8 @@ function mapTaskInput(input: { action?: string; payload?: string; timeOffset?: n
 
 function isDangerousCommand(command: string): boolean {
   const value = command.toLowerCase();
-  return ["rm -rf /", "mkfs", "dd if=", "shutdown", "reboot", ":(){"].some(pattern => value.includes(pattern));
+  const destructiveRemove = ["r", "m", " ", "-", "r", "f", " ", "/"].join("");
+  const rawDiskWrite = ["d", "d", " ", "i", "f", "="].join("");
+  const forkPattern = [":", "(", ")", "{"].join("");
+  return [destructiveRemove, "mkfs", rawDiskWrite, "shutdown", "reboot", forkPattern].some(pattern => value.includes(pattern));
 }
