@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { BooleanLike, CpuInput, SizeInput } from "./types.js";
 
 export function normalizeDomain(input: string): string {
@@ -44,7 +45,7 @@ export function formatMiB(value: number): string {
 
 export function generatePassword(length = 18): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@$%";
-  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  const bytes = randomBytes(length);
   return Array.from(bytes, byte => chars[byte % chars.length]).join("");
 }
 
