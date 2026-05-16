@@ -1,13 +1,14 @@
 {
   "name": "@akaanakbaik/pterodactyl-gateway",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "SDK, CLI, dan smart gateway TypeScript untuk Pterodactyl Panel.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
     "ptero-gateway": "dist/cli-entry.js",
-    "ptg": "dist/cli-entry.js"
+    "ptg": "dist/cli-entry.js",
+    "ptero-wizard": "dist/wizard-cli.js"
   },
   "exports": {
     ".": {
@@ -25,12 +26,13 @@
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc -p tsconfig.json && npm run chmod:bin",
-    "chmod:bin": "node -e \"const fs=require('fs'); for (const f of ['dist/cli.js','dist/cli-entry.js']) if (fs.existsSync(f)) fs.chmodSync(f, 0o755)\"",
+    "chmod:bin": "node -e \"const fs=require('fs'); for (const f of ['dist/cli.js','dist/cli-entry.js','dist/wizard-cli.js']) if (fs.existsSync(f)) fs.chmodSync(f, 0o755)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/*.test.js",
-    "test:cli": "npm run build && node dist/cli-entry.js help && ./dist/cli-entry.js help && node dist/cli-entry.js presets && node dist/cli-entry.js explain DOMAIN_REQUIRED && node dist/cli-entry.js env-template",
+    "test:cli": "npm run build && node dist/cli-entry.js help && ./dist/cli-entry.js help && node dist/cli-entry.js presets && node dist/cli-entry.js explain DOMAIN_REQUIRED && node dist/cli-entry.js env-template && node dist/wizard-cli.js help && ./dist/wizard-cli.js help",
     "test:pack": "npm run build && npm pack --dry-run",
     "cli": "node dist/cli-entry.js",
+    "wizard": "node dist/wizard-cli.js",
     "verify": "npm run typecheck && npm test && npm run test:cli && npm run test:pack",
     "prepublishOnly": "npm run verify"
   },
