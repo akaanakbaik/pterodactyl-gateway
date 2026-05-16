@@ -207,7 +207,14 @@ export class PteroGateway {
       allocation = selectAllocations(rawAllocations, allocationCount, input.allocation ?? "auto");
     } catch (error) {
       if (error instanceof PteroError && error.code === "NO_FREE_ALLOCATION") {
-        throw new PteroError({ ...error, message: `Tidak ada allocation kosong di Node ID ${input.nodeId}.` });
+        throw new PteroError({
+          code: "NO_FREE_ALLOCATION",
+          message: `Tidak ada allocation kosong di Node ID ${input.nodeId}.`,
+          hint: error.hint,
+          steps: error.steps,
+          example: error.example,
+          raw: error.raw
+        });
       }
       throw error;
     }
