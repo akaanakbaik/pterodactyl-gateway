@@ -67,12 +67,22 @@ jobs:
           set -euo pipefail
           PACKAGE_TGZ="$(ls akaanakbaik-pterodactyl-gateway-*.tgz | head -n 1)"
           SMOKE_DIR="$(mktemp -d)"
+          npm init -y --prefix "$SMOKE_DIR"
           npm install --prefix "$SMOKE_DIR" "$PWD/$PACKAGE_TGZ" --force
-          CLI="$SMOKE_DIR/node_modules/@akaanakbaik/pterodactyl-gateway/dist/cli-entry.js"
-          WIZARD="$SMOKE_DIR/node_modules/@akaanakbaik/pterodactyl-gateway/dist/wizard-cli.js"
-          test -f "$CLI"
-          test -f "$WIZARD"
-          node "$CLI" version
-          node "$CLI" self-check
-          node "$CLI" release-check
-          node "$WIZARD" help
+          NPM_ROOT="$(npm root --prefix "$SMOKE_DIR")"
+          PACKAGE_DIR="$NPM_ROOT/@akaanakbaik/pterodactyl-gateway"
+          CLI_BIN="$NPM_ROOT/.bin/ptero-gateway"
+          WIZARD_BIN="$NPM_ROOT/.bin/ptero-wizard"
+          echo "SMOKE_DIR=$SMOKE_DIR"
+          echo "NPM_ROOT=$NPM_ROOT"
+          echo "PACKAGE_DIR=$PACKAGE_DIR"
+          test -d "$PACKAGE_DIR"
+          test -f "$PACKAGE_DIR/package.json"
+          test -f "$PACKAGE_DIR/dist/cli-entry.js"
+          test -f "$PACKAGE_DIR/dist/wizard-cli.js"
+          test -x "$CLI_BIN"
+          test -x "$WIZARD_BIN"
+          "$CLI_BIN" version
+          "$CLI_BIN" self-check
+          "$CLI_BIN" release-check
+          "$WIZARD_BIN" help
