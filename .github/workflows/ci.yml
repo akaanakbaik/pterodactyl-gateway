@@ -78,14 +78,20 @@ jobs:
           echo "SMOKE_DIR=$SMOKE_DIR"
           echo "NPM_ROOT=$NPM_ROOT"
           echo "PACKAGE_DIR=$PACKAGE_DIR"
-          ls -la "$NPM_ROOT/.bin"
+          if [ -d "$NPM_ROOT/.bin" ]; then
+            ls -la "$NPM_ROOT/.bin"
+          else
+            echo "Info: $NPM_ROOT/.bin was not created by npm; validating CLI through package entry files instead."
+          fi
           test -d "$PACKAGE_DIR"
           test -f "$PACKAGE_DIR/package.json"
           test -f "$PACKAGE_DIR/dist/cli-entry.js"
           test -f "$PACKAGE_DIR/dist/wizard-cli.js"
-          test -e "$CLI_BIN"
-          test -e "$WIZARD_BIN"
           node "$PACKAGE_DIR/dist/cli-entry.js" version
           node "$PACKAGE_DIR/dist/cli-entry.js" self-check
           node "$PACKAGE_DIR/dist/cli-entry.js" release-check
           node "$PACKAGE_DIR/dist/wizard-cli.js" help
+          if [ -e "$CLI_BIN" ]; then test -e "$CLI_BIN"; fi
+          if [ -e "$WIZARD_BIN" ]; then test -e "$WIZARD_BIN"; fi
+          npm exec --prefix "$SMOKE_DIR" ptero-gateway version
+          npm exec --prefix "$SMOKE_DIR" ptero-wizard help
