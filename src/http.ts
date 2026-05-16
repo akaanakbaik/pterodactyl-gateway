@@ -32,22 +32,23 @@ export class HttpCore {
     const path = options.path.startsWith("/") ? options.path : `/${options.path}`;
     const prefix = options.api === "application" ? "/api/application" : "/api/client";
     const url = `${this.config.domain}${prefix}${path}`;
+    const contentType = options.contentType ?? "json";
 
     try {
       const response = await this.config.fetcher(url, {
         method: options.method ?? "GET",
         headers: {
-          Accept: "Application/vnd.pterodactyl.v1+json",
-          "Content-Type": "application/json",
+          Accept: options.responseType === "text" ? "text/plain" : "Application/vnd.pterodactyl.v1+json",
+          "Content-Type": contentType === "text" ? "text/plain" : "application/json",
           "User-Agent": this.config.userAgent,
           Authorization: `Bearer ${key}`
         },
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body: buildBody(options.body, contentType),
         signal: controller.signal
       });
 
       const text = await response.text();
-      const data = text ? safeJson(text) : undefined;
+      const data = options.responseType === "text" ? text : text ? safeJson(text) : undefined;
 
       if (!response.ok) {
         throw new PteroError({
@@ -78,6 +79,12 @@ export class HttpCore {
       clearTimeout(timer);
     }
   }
+}
+
+function buildBody(body: unknown, contentType: "json" | "text"): BodyInit | undefined {
+  if (body === undefined) return undefined;
+  if (contentType === "text") return String(body);
+  return JSON.stringify(body);
 }
 
 function safeJson(text: string): unknown {
@@ -116,6 +123,6 @@ function buildStatusHint(status: number, api: "application" | "client"): string 
   if (status === 404) return "Cek ID, endpoint, atau versi panel.";
   if (status === 422) return "Cek payload yang dikirim. Gunakan previewCreate atau dryRun untuk melihat payload final.";
   if (status === 429) return "Terlalu banyak request. Kurangi frekuensi atau aktifkan queue di versi mendatang.";
-  if (status >= 500) return "Panel mengembalikan error server. Cek log panel atau Wings. ";
+  if (status >= 500) return "Panel mengembalikan error server. Cek log panel atau Wings.";
   return undefined;
 }
