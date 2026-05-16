@@ -6,8 +6,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "ptero-gateway": "dist/cli.js",
-    "ptg": "dist/cli.js"
+    "ptero-gateway": "dist/cli-entry.js",
+    "ptg": "dist/cli-entry.js"
   },
   "exports": {
     ".": {
@@ -25,12 +25,12 @@
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc -p tsconfig.json && npm run chmod:bin",
-    "chmod:bin": "node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
+    "chmod:bin": "node -e \"const fs=require('fs'); for (const f of ['dist/cli.js','dist/cli-entry.js']) if (fs.existsSync(f)) fs.chmodSync(f, 0o755)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/*.test.js",
-    "test:cli": "npm run build && node dist/cli.js help && ./dist/cli.js help",
+    "test:cli": "npm run build && node dist/cli-entry.js help && ./dist/cli-entry.js help && node dist/cli-entry.js presets && node dist/cli-entry.js explain DOMAIN_REQUIRED && node dist/cli-entry.js env-template",
     "test:pack": "npm run build && npm pack --dry-run",
-    "cli": "node dist/cli.js",
+    "cli": "node dist/cli-entry.js",
     "verify": "npm run typecheck && npm test && npm run test:cli && npm run test:pack",
     "prepublishOnly": "npm run verify"
   },
