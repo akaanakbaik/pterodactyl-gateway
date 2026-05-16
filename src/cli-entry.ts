@@ -99,6 +99,15 @@ const EXPLAINS: Record<string, { title: string; reason: string; fix: string[] }>
 
 if (command === "help" || command === "--help" || command === "-h") {
   printHelp();
+} else if (command === "version" || command === "--version" || command === "-v") {
+  const { versionCommand } = await import("./meta.js");
+  versionCommand(jsonMode);
+} else if (command === "self-check") {
+  const { selfCheckCommand } = await import("./meta.js");
+  selfCheckCommand(jsonMode);
+} else if (command === "release-check") {
+  const { releaseCheckCommand } = await import("./meta.js");
+  releaseCheckCommand(jsonMode);
 } else if (command === "env-template") {
   const content = [
     "PTERO_DOMAIN=https://panel.example.com",
@@ -132,10 +141,15 @@ function printHelp() {
   console.log(`Akadev Pterodactyl Gateway
 
 Perintah:
+  ptero-gateway version [--json]
+  ptero-gateway self-check [--json]
+  ptero-gateway release-check [--json]
   ptero-gateway config help
   ptero-gateway config init --domain https://panel.example.com --ptla ptla_xxx --ptlc ptlc_xxx
   ptero-gateway config list
   ptero-gateway config use <profile>
+  ptero-gateway config rename <old> <new>
+  ptero-gateway config delete <profile> --yes
   ptero-gateway config doctor
   ptero-gateway templates list
   ptero-gateway templates show nodejs-bot
