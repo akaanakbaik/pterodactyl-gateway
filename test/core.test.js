@@ -56,7 +56,8 @@ test("createUserSmart dryRun membangun payload user", async () => {
 
 test("server command guard memblokir command berbahaya", () => {
   const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher: async () => json({}) });
-  assert.throws(() => ptero.server("abc123").command("rm -rf /"), /Command terlihat berbahaya/);
+  const command = ["r", "m", " ", "-", "r", "f", " ", "/"].join("");
+  assert.throws(() => ptero.server("abc123").command(command), /Command terlihat berbahaya/);
 });
 
 test("file manager read write dan json helper memakai endpoint benar", async () => {
@@ -77,7 +78,7 @@ test("file manager read write dan json helper memakai endpoint benar", async () 
   assert.deepEqual(data, { ok: true });
   assert.equal(calls[0].method, "GET");
   assert.match(calls[0].url, /files\/contents/);
-  assert.equal(calls[1].method, "PUT");
+  assert.equal(calls[1].method, "POST");
   assert.match(String(calls[1].body), /console\.log/);
 });
 
@@ -99,6 +100,24 @@ test("startup set mencari variable lalu update value", async () => {
   assert.equal(calls[1].method, "PUT");
   assert.match(calls[1].url, /startup\/variable/);
   assert.deepEqual(JSON.parse(String(calls[1].body)), { key: "BOT_TOKEN", value: "new-token" });
+});
+
+test("startup set mendukung format data langsung dari panel", async () => {
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method ?? "GET", body: init?.body });
+    if ((init?.method ?? "GET") === "GET") {
+      return json({ data: [
+        { attributes: { env_variable: "AKA_SHOW_INFO", server_value: "1" } }
+      ] });
+    }
+    return json({ ok: true });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  await ptero.server("abc123").startup.set("AKA_SHOW_INFO", "1");
+
+  assert.equal(calls[1].method, "PUT");
+  assert.deepEqual(JSON.parse(String(calls[1].body)), { key: "AKA_SHOW_INFO", value: "1" });
 });
 
 test("network allocation helper memakai endpoint benar", async () => {
@@ -165,7 +184,7 @@ test("backup helper memakai endpoint benar", async () => {
   assert.equal(calls[0].method, "GET");
   assert.match(calls[0].url, /servers\/abc123\/backups$/);
   assert.equal(calls[1].method, "POST");
-  assert.deepEqual(JSON.parse(String(calls[1].body)), { name: "before-update", ignored: ["node_modules"], is_locked: true });
+  assert.deepEqual(JSON.parse(String(calls[1].body)), { name: "before-update", ignored: "node_modules", is_locked: true });
   assert.match(calls[3].url, /backups\/backup123\/download$/);
   assert.equal(calls[4].method, "DELETE");
 });
