@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <code>@akaanakbaik/pterodactyl-gateway</code> · <code>v1.0.0</code> · <code>Node.js &gt;=18</code> · <code>MIT</code>
+  <code>@akaanakbaik/pterodactyl-gateway</code> · <code>v1.0.1</code> · <code>Node.js &gt;=18</code> · <code>MIT</code>
 </p>
 
 Akadev Pterodactyl Gateway membantu kamu menghubungkan aplikasi Node.js ke Pterodactyl Panel dengan flow yang lebih aman dan cepat: cek koneksi, membuat user, membuat server, dry-run payload, mengelola file, startup variables, backup, schedule, power action, sampai CLI admin yang mudah dipakai.
