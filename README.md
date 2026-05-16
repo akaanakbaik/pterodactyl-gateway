@@ -2,15 +2,15 @@
 
 SDK TypeScript dan CLI sederhana untuk membantu project Node.js terhubung ke Pterodactyl Panel dengan lebih mudah.
 
-Package ini dibuat untuk kebutuhan bot reseller panel, dashboard custom, automation server, dan admin tools. Fokus awal v0.1.0 adalah koneksi, validasi, smart create user, smart create server, preview, dry run, error tutorial, raw request, dan kontrol dasar server.
+Package ini dibuat untuk kebutuhan bot reseller panel, dashboard custom, automation server, dan admin tools. Fokus awal v0.1.x adalah koneksi, validasi, smart create user, smart create server, preview, dry run, error tutorial, raw request, kontrol dasar server, test hardening, dan pack check.
 
 Package ini bukan package resmi dari Pterodactyl dan tidak berafiliasi dengan Pterodactyl Software.
 
 ## Status
 
-Versi awal: `0.1.0`
+Versi saat ini: `0.1.1`
 
-Fitur target v0.1.0:
+Fitur target v0.1.x:
 
 - `createPtero()`
 - `createPtero.fromEnv()`
@@ -34,6 +34,8 @@ Fitur target v0.1.0:
 - parser RAM, disk, CPU
 - error tutorial
 - CLI dasar `ptero-gateway`
+- `npm run verify`
+- `npm pack --dry-run`
 
 ## Install lokal
 
@@ -47,8 +49,7 @@ Untuk development dari GitHub:
 git clone https://github.com/akaanakbaik/pterodactyl-gateway.git
 cd pterodactyl-gateway
 npm install
-npm test
-npm run build
+npm run verify
 ```
 
 ## Env
@@ -290,18 +291,23 @@ sudo apt install -y nodejs
 git clone https://github.com/akaanakbaik/pterodactyl-gateway.git
 cd pterodactyl-gateway
 npm install
-npm run typecheck
-npm test
-npm run build
+npm run verify
 ```
+
+`npm run verify` menjalankan:
+
+- `npm run typecheck`
+- `npm test`
+- `npm run test:cli`
+- `npm run test:pack`
 
 Jika semua berhasil, package siap dilanjutkan ke fitur versi berikutnya.
 
 ## Roadmap ringkas
 
-### v0.1.0
+### v0.1.x
 
-Core SDK, smart create user, smart create server, preview, dryRun, doctor dasar, CLI dasar, raw request, test, CI.
+Core SDK, smart create user, smart create server, preview, dryRun, doctor dasar, CLI dasar, raw request, test, CI, pack check.
 
 ### v0.2.0
 
