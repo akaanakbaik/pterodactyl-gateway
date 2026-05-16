@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.4.0
+
+Rilis minor aman yang fokus pada pengalaman CLI pemula tanpa menambah kontrol sensitif untuk node/location/allocation.
+
+### Ditambahkan
+
+- `ptero-gateway presets`
+- `ptero-gateway presets --json`
+- `--preset mini|basic|standard|premium|unlimited` pada `admin create-server`
+- `ptero-gateway explain <ERROR_CODE>`
+- `ptero-gateway explain <ERROR_CODE> --json`
+- `ptero-gateway env-template`
+- wrapper CLI `cli-entry` agar helper seperti `presets`, `explain`, dan `env-template` bisa berjalan tanpa env panel
+- help utama menampilkan helper baru
+
+### Preset server
+
+- `mini`: 512MB RAM, 1GB disk, 50% CPU
+- `basic`: 1GB RAM, 2GB disk, 100% CPU
+- `standard`: 2GB RAM, 5GB disk, 200% CPU
+- `premium`: 4GB RAM, 10GB disk, 300% CPU
+- `unlimited`: memory/disk/cpu `0` sesuai aturan Pterodactyl
+
+Semua preset tetap bisa dioverride dengan `--memory`, `--disk`, `--cpu`, `--databases`, `--allocations`, dan `--backups`.
+
+### Keamanan
+
+- Tidak ada command admin untuk mengelola node.
+- Tidak ada command admin untuk mengelola location.
+- Tidak ada command admin untuk membuat allocation node.
+- Fitur baru hanya membantu preset, penjelasan error, dan template env.
+
+### Testing yang sudah dilakukan
+
+- `ptero-gateway presets`
+- `ptero-gateway explain DOMAIN_REQUIRED`
+- `ptero-gateway explain DOCKER_IMAGE_NOT_FOUND`
+- `ptero-gateway env-template`
+- pengecekan command sensitif node/allocation tidak tersedia
+
 ## 0.3.0
 
 Rilis publik pertama yang sudah dites langsung pada panel Pterodactyl asli dan dipublish ke npm sebagai `@akaanakbaik/pterodactyl-gateway`.
@@ -117,14 +157,3 @@ Rilis publik pertama yang sudah dites langsung pada panel Pterodactyl asli dan d
 - Schedule manager wrapper.
 - Probe read-only.
 - Human-friendly CLI table output.
-
-## 0.1.x
-
-- Core SDK.
-- Smart create user.
-- Smart create server.
-- Preview dan dry-run.
-- Raw request.
-- Error tutorial.
-- CLI dasar.
-- Test, typecheck, pack check.
