@@ -150,7 +150,7 @@ function formatSummary(result: unknown): string {
   const lines = [`Server Summary: ${root.identifier}`, ""];
   lines.push(formatResources(root.resources));
   lines.push("");
-  lines.push(`Files/Startup/Network/DB/Backup/Schedule:`);
+  lines.push("Files/Startup/Network/DB/Backup/Schedule:");
   lines.push(`startup variables: ${countCollection(root.startup)}`);
   lines.push(`ports: ${countCollection(root.network)}`);
   lines.push(`databases: ${countCollection(root.databases)}`);
@@ -242,9 +242,9 @@ function formatClientServers(raw: unknown) {
 function table(rows: Array<Record<string, unknown>>, columns: string[]): string {
   if (rows.length === 0) return "";
   const widths = columns.map(column => Math.max(column.length, ...rows.map(row => String(row[column] ?? "").length)));
-  const header = columns.map((column, index) => column.padEnd(widths[index])).join("  ");
+  const header = columns.map((column, index) => column.padEnd(widths[index] ?? column.length)).join("  ");
   const divider = widths.map(width => "-".repeat(width)).join("  ");
-  const body = rows.map(row => columns.map((column, index) => String(row[column] ?? "").padEnd(widths[index])).join("  "));
+  const body = rows.map(row => columns.map((column, index) => String(row[column] ?? "").padEnd(widths[index] ?? column.length)).join("  "));
   return [header, divider, ...body].join("\n");
 }
 
@@ -276,7 +276,7 @@ function formatBytes(value: number): string {
     size /= 1024;
     unit++;
   }
-  return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 2)} ${units[unit]}`;
+  return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 2)} ${units[unit] ?? "B"}`;
 }
 
 function formatDuration(ms: number): string {
