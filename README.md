@@ -2,13 +2,13 @@
 
 SDK TypeScript dan CLI sederhana untuk membantu project Node.js terhubung ke Pterodactyl Panel dengan lebih mudah.
 
-Package ini dibuat untuk kebutuhan bot reseller panel, dashboard custom, automation server, dan admin tools. Fokus v0.2.x adalah memperluas kontrol server dengan file manager, startup variables, network allocations, database manager, backup manager, dan schedules, sambil tetap menjaga smart create user/server, preview, dry run, error tutorial, raw request, test, dan pack check.
+Package ini dibuat untuk kebutuhan bot reseller panel, dashboard custom, automation server, dan admin tools. Fokus v0.2.x adalah memperluas kontrol server dengan file manager, startup variables, network allocations, database manager, backup manager, schedules, dan probe read-only, sambil tetap menjaga smart create user/server, preview, dry run, error tutorial, raw request, test, dan pack check.
 
 Package ini bukan package resmi dari Pterodactyl dan tidak berafiliasi dengan Pterodactyl Software.
 
 ## Status
 
-Versi saat ini: `0.2.2`
+Versi saat ini: `0.2.3`
 
 Fitur utama:
 
@@ -31,6 +31,7 @@ Fitur utama:
 - `server(identifier).kill()`
 - `server(identifier).command()`
 - `server(identifier).resources()`
+- `server(identifier).probe()`
 - `server(identifier).files.list()`
 - `server(identifier).files.read()`
 - `server(identifier).files.write()`
@@ -228,6 +229,21 @@ const preview = await ptero.servers.previewCreate({
 console.log(preview.payload);
 ```
 
+## Probe read-only
+
+Probe dipakai untuk mengecek endpoint client server yang tersedia di panel tanpa membuat, mengedit, atau menghapus data.
+
+```ts
+const report = await ptero.server("abc12345").probe();
+console.log(report);
+```
+
+CLI:
+
+```bash
+ptero-gateway probe abc12345
+```
+
 ## File manager
 
 ```ts
@@ -395,6 +411,7 @@ ptero-gateway doctor
 ptero-gateway connect
 ptero-gateway ids
 ptero-gateway ids --nest 5
+ptero-gateway probe abc12345
 ptero-gateway server abc123 resources
 ptero-gateway server abc123 restart
 ptero-gateway server abc123 command "npm start"
