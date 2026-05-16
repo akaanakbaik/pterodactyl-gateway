@@ -78,6 +78,34 @@ export async function configCommand(args: string[]) {
     return;
   }
 
+  if (action === "rename") {
+    const oldName = args[1];
+    const newName = args[2];
+    if (!oldName || !newName) throw new Error("Format: ptero-gateway config rename <old> <new>");
+    const config = readConfig();
+    if (!config.profiles[oldName]) throw new Error(`Profile tidak ditemukan: ${oldName}`);
+    if (config.profiles[newName]) throw new Error(`Profile tujuan sudah ada: ${newName}`);
+    config.profiles[newName] = config.profiles[oldName];
+    delete config.profiles[oldName];
+    if (config.active === oldName) config.active = newName;
+    writeConfig(config);
+    printJsonOrText(jsonMode, safeConfig(config), `Profile '${oldName}' diganti menjadi '${newName}'.`);
+    return;
+  }
+
+  if (action === "delete" || action === "remove" || action === "rm") {
+    const profileName = args[1];
+    if (!profileName) throw new Error("Format: ptero-gateway config delete <profile> --yes");
+    if (!args.includes("--yes")) throw new Error("Aksi delete config butuh --yes.");
+    const config = readConfig();
+    if (!config.profiles[profileName]) throw new Error(`Profile tidak ditemukan: ${profileName}`);
+    delete config.profiles[profileName];
+    if (config.active === profileName) config.active = Object.keys(config.profiles)[0];
+    writeConfig(config);
+    printJsonOrText(jsonMode, safeConfig(config), `Profile '${profileName}' dihapus.`);
+    return;
+  }
+
   if (action === "env") {
     const config = readConfig();
     const profileName = args[1] && !args[1].startsWith("--") ? args[1] : config.active;
@@ -219,6 +247,8 @@ Perintah:
   ptero-gateway config list
   ptero-gateway config show [profile]
   ptero-gateway config use <profile>
+  ptero-gateway config rename <old> <new>
+  ptero-gateway config delete <profile> --yes
   ptero-gateway config env [profile]
   ptero-gateway config doctor
 
