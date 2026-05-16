@@ -18,7 +18,7 @@ async function main() {
   if (command === "doctor") {
     const report = await ptero.doctor();
     output(report, formatDoctor(report));
-    process.exitCode = report.ok ? 0 : 1;
+    process.exitCode = asRecord(report).ok ? 0 : 1;
     return;
   }
 
@@ -43,13 +43,59 @@ async function main() {
     return;
   }
 
+  if (command === "admin") {
+    const scope = args[1];
+    if (!scope) throw new Error("Format: ptero-gateway admin <users|servers|server>");
+
+    if (scope === "users") {
+      const result = await ptero.raw.application.get("/users?per_page=100");
+      output(result, formatAdminUsers(result));
+      return;
+    }
+
+    if (scope === "servers") {
+      const result = await ptero.raw.application.get("/servers?per_page=100");
+      output(result, formatAdminServers(result));
+      return;
+    }
+
+    if (scope === "server") {
+      const serverId = args[2];
+      const action = args[3];
+      if (!serverId || !action) throw new Error("Format: ptero-gateway admin server <serverId> <detail|limits|update-limits>");
+
+      if (action === "detail") {
+        const result = await ptero.raw.application.get(`/servers/${serverId}`);
+        output(result, formatAdminServerDetail(result));
+        return;
+      }
+
+      if (action === "limits") {
+        const result = await ptero.raw.application.get(`/servers/${serverId}`);
+        output(result, formatAdminServerLimits(result));
+        return;
+      }
+
+      if (action === "update-limits") {
+        requireYes("update server limits");
+        const current = await ptero.raw.application.get(`/servers/${serverId}`);
+        const payload = buildLimitPayload(current);
+        const result = await ptero.raw.application.patch(`/servers/${serverId}/build`, payload);
+        output(result, "Limit server berhasil di-update.");
+        return;
+      }
+    }
+
+    throw new Error(`Admin command tidak dikenal: ${scope}`);
+  }
+
   if (command === "probe") {
     const id = args[1];
     if (!id) throw new Error("Format: ptero-gateway probe <identifier>");
     if (isPlaceholderIdentifier(id)) throw new Error("IDENTIFIER_SERVER hanya placeholder. Jalankan `ptero-gateway servers`, lalu salin nilai `identifier` server yang ingin dicek.");
     const report = await ptero.server(id).probe();
     output(report, formatProbe(report));
-    process.exitCode = report.ok ? 0 : 1;
+    process.exitCode = asRecord(report).ok ? 0 : 1;
     return;
   }
 
@@ -165,8 +211,38 @@ function getOption(name: string): string | undefined {
   return args[index + 1];
 }
 
+function getNumberOption(name: string, fallback: number): number {
+  const value = getOption(name);
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) throw new Error(`${name} harus berupa angka.`);
+  return parsed;
+}
+
 function errorResult(error: unknown) {
   return { error: error instanceof Error ? error.message : String(error) };
+}
+
+function buildLimitPayload(raw: unknown): Record<string, unknown> {
+  const attributes = getAttributes(raw);
+  const limits = asRecord(attributes.limits);
+  const featureLimits = asRecord(attributes.feature_limits);
+  const allocation = Number(attributes.allocation ?? 0);
+  if (!allocation) throw new Error("Tidak bisa membaca default allocation server dari Application API.");
+  return {
+    allocation,
+    memory: getNumberOption("--memory", Number(limits.memory ?? 0)),
+    swap: getNumberOption("--swap", Number(limits.swap ?? 0)),
+    disk: getNumberOption("--disk", Number(limits.disk ?? 0)),
+    io: getNumberOption("--io", Number(limits.io ?? 500)),
+    cpu: getNumberOption("--cpu", Number(limits.cpu ?? 0)),
+    threads: getOption("--threads") ?? String(limits.threads ?? ""),
+    feature_limits: {
+      databases: getNumberOption("--databases", Number(featureLimits.databases ?? 0)),
+      allocations: getNumberOption("--allocations", Number(featureLimits.allocations ?? 0)),
+      backups: getNumberOption("--backups", Number(featureLimits.backups ?? 0))
+    }
+  };
 }
 
 function formatDoctor(report: unknown): string {
@@ -287,6 +363,76 @@ function formatClientServers(raw: unknown) {
   });
 }
 
+function formatAdminUsers(raw: unknown): string {
+  const rows = getCollection(raw).map(item => {
+    const attributes = asRecord(item.attributes);
+    return {
+      id: String(attributes.id ?? ""),
+      username: String(attributes.username ?? ""),
+      email: String(attributes.email ?? ""),
+      admin: String(Boolean(attributes.root_admin ?? false))
+    };
+  });
+  return rows.length ? table(rows, ["id", "username", "email", "admin"]) : "User kosong.";
+}
+
+function formatAdminServers(raw: unknown): string {
+  const rows = getCollection(raw).map(item => {
+    const attributes = asRecord(item.attributes);
+    const limits = asRecord(attributes.limits);
+    const feature = asRecord(attributes.feature_limits);
+    return {
+      id: String(attributes.id ?? ""),
+      identifier: String(attributes.identifier ?? ""),
+      name: String(attributes.name ?? ""),
+      memory: String(limits.memory ?? ""),
+      disk: String(limits.disk ?? ""),
+      cpu: String(limits.cpu ?? ""),
+      backups: String(feature.backups ?? "")
+    };
+  });
+  return rows.length ? table(rows, ["id", "identifier", "name", "memory", "disk", "cpu", "backups"]) : "Server kosong.";
+}
+
+function formatAdminServerDetail(raw: unknown): string {
+  const attributes = getAttributes(raw);
+  return [
+    `ID: ${attributes.id ?? "-"}`,
+    `Identifier: ${attributes.identifier ?? "-"}`,
+    `UUID: ${attributes.uuid ?? "-"}`,
+    `Name: ${attributes.name ?? "-"}`,
+    `Owner ID: ${attributes.user ?? "-"}`,
+    `Node ID: ${attributes.node ?? "-"}`,
+    `Allocation ID: ${attributes.allocation ?? "-"}`,
+    "",
+    formatAdminServerLimits(raw)
+  ].join("\n");
+}
+
+function formatAdminServerLimits(raw: unknown): string {
+  const attributes = getAttributes(raw);
+  const limits = asRecord(attributes.limits);
+  const feature = asRecord(attributes.feature_limits);
+  const rows = [
+    { name: "memory", value: String(limits.memory ?? "") },
+    { name: "swap", value: String(limits.swap ?? "") },
+    { name: "disk", value: String(limits.disk ?? "") },
+    { name: "io", value: String(limits.io ?? "") },
+    { name: "cpu", value: String(limits.cpu ?? "") },
+    { name: "threads", value: String(limits.threads ?? "") },
+    { name: "databases", value: String(feature.databases ?? "") },
+    { name: "allocations", value: String(feature.allocations ?? "") },
+    { name: "backups", value: String(feature.backups ?? "") }
+  ];
+  return table(rows, ["name", "value"]);
+}
+
+function getAttributes(raw: unknown): Record<string, unknown> {
+  const root = asRecord(raw);
+  const data = asRecord(root.data);
+  return asRecord(data.attributes ?? root.attributes ?? raw);
+}
+
 function table(rows: Array<Record<string, unknown>>, columns: string[]): string {
   if (rows.length === 0) return "";
   const widths = columns.map(column => Math.max(column.length, ...rows.map(row => String(row[column] ?? "").length)));
@@ -361,6 +507,11 @@ Perintah:
   ptero-gateway connect [--json]
   ptero-gateway ids [--nest <nestId>] [--json]
   ptero-gateway servers [--json]
+  ptero-gateway admin users [--json]
+  ptero-gateway admin servers [--json]
+  ptero-gateway admin server <serverId> detail [--json]
+  ptero-gateway admin server <serverId> limits [--json]
+  ptero-gateway admin server <serverId> update-limits --backups 1 --yes
   ptero-gateway probe <identifier> [--json]
   ptero-gateway server <identifier> summary [--json]
   ptero-gateway server <identifier> resources [--json]
