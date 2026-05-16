@@ -3,7 +3,8 @@ import { createPtero, explainError } from "./index.js";
 
 const rawArgs = process.argv.slice(2);
 const jsonMode = rawArgs.includes("--json");
-const args = rawArgs.filter(arg => arg !== "--json");
+const yesMode = rawArgs.includes("--yes") || rawArgs.includes("-y");
+const args = rawArgs.filter(arg => arg !== "--json" && arg !== "--yes" && arg !== "-y");
 const command = args[0] ?? "help";
 
 async function main() {
@@ -71,23 +72,55 @@ async function main() {
       const result = { identifier: id, resources, startup, network, databases, backups, schedules };
       output(result, formatSummary(result));
     }
-    else if (action === "start") output(await server.start());
-    else if (action === "stop") output(await server.stop());
-    else if (action === "restart") output(await server.restart());
-    else if (action === "kill") output(await server.kill());
+    else if (action === "start") {
+      requireYes("start server");
+      output(await server.start(), "Power signal terkirim: start");
+    }
+    else if (action === "stop") {
+      requireYes("stop server");
+      output(await server.stop(), "Power signal terkirim: stop");
+    }
+    else if (action === "restart") {
+      requireYes("restart server");
+      output(await server.restart(), "Power signal terkirim: restart");
+    }
+    else if (action === "kill") {
+      requireYes("kill server");
+      output(await server.kill(), "Power signal terkirim: kill");
+    }
     else if (action === "resources") {
       const result = await server.resources();
       output(result, formatResources(result));
     }
-    else if (action === "command") output(await server.command(args.slice(3).join(" ")));
+    else if (action === "command") {
+      requireYes("send command");
+      const commandToSend = args.slice(3).join(" ");
+      if (!commandToSend) throw new Error("Format: ptero-gateway server <identifier> command \"npm start\" --yes");
+      output(await server.command(commandToSend), `Command terkirim: ${commandToSend}`);
+    }
     else if (action === "files") {
       const result = await server.files.list(args[3] ?? "/");
       output(result, formatFiles(result));
     }
     else if (action === "read") console.log(await server.files.read(args[3] ?? "/"));
+    else if (action === "write") {
+      requireYes("write file");
+      const file = args[3];
+      const content = args.slice(4).join(" ");
+      if (!file || !content) throw new Error("Format: ptero-gateway server <identifier> write /tmp/test.txt \"isi file\" --yes");
+      if (!isSafeTmpPath(file)) throw new Error("Demi keamanan, write via CLI hanya boleh ke /tmp/. Contoh: /tmp/test.txt");
+      output(await server.files.write(file, content), `File berhasil ditulis: ${file}`);
+    }
     else if (action === "startup" || action === "env") {
       const result = await server.startup.variables();
       output(result, formatStartup(result));
+    }
+    else if (action === "set-env") {
+      requireYes("set startup variable");
+      const key = args[3];
+      const value = args.slice(4).join(" ");
+      if (!key || !value) throw new Error("Format: ptero-gateway server <identifier> set-env KEY VALUE --yes");
+      output(await server.startup.set(key, value), `Variable ${key} berhasil diubah menjadi ${maskIfSecret(key, value)}`);
     }
     else if (action === "network" || action === "ports") {
       const result = await server.network.list();
@@ -100,6 +133,11 @@ async function main() {
     else if (action === "backups") {
       const result = await server.backups.list();
       output(result, formatNamedList(result, "backup"));
+    }
+    else if (action === "create-backup") {
+      requireYes("create backup");
+      const name = getOption("--name") ?? `backup-${new Date().toISOString()}`;
+      output(await server.backups.create({ name }), `Backup dibuat: ${name}`);
     }
     else if (action === "schedules") {
       const result = await server.schedules.list();
@@ -115,6 +153,16 @@ async function main() {
 function output(raw: unknown, pretty?: string) {
   if (jsonMode || !pretty) console.log(JSON.stringify(raw, null, 2));
   else console.log(pretty);
+}
+
+function requireYes(action: string) {
+  if (!yesMode) throw new Error(`Aksi '${action}' mengubah server. Tambahkan --yes jika kamu yakin.`);
+}
+
+function getOption(name: string): string | undefined {
+  const index = args.indexOf(name);
+  if (index < 0) return undefined;
+  return args[index + 1];
 }
 
 function errorResult(error: unknown) {
@@ -267,6 +315,10 @@ function isPlaceholderIdentifier(value: string): boolean {
   return value === "IDENTIFIER_SERVER" || value === "<identifier>" || value === "abc12345";
 }
 
+function isSafeTmpPath(value: string): boolean {
+  return value === "/tmp" || value.startsWith("/tmp/");
+}
+
 function formatBytes(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -319,11 +371,14 @@ Perintah:
   ptero-gateway server <identifier> databases [--json]
   ptero-gateway server <identifier> backups [--json]
   ptero-gateway server <identifier> schedules [--json]
-  ptero-gateway server <identifier> start
-  ptero-gateway server <identifier> stop
-  ptero-gateway server <identifier> restart
-  ptero-gateway server <identifier> kill
-  ptero-gateway server <identifier> command "npm start"
+  ptero-gateway server <identifier> write /tmp/test.txt "isi file" --yes
+  ptero-gateway server <identifier> set-env KEY VALUE --yes
+  ptero-gateway server <identifier> create-backup --name "backup-name" --yes
+  ptero-gateway server <identifier> start --yes
+  ptero-gateway server <identifier> stop --yes
+  ptero-gateway server <identifier> restart --yes
+  ptero-gateway server <identifier> kill --yes
+  ptero-gateway server <identifier> command "npm start" --yes
 
 Env:
   PTERO_DOMAIN=https://panel.example.com
