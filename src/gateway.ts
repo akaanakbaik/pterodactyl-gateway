@@ -21,7 +21,7 @@ export class PteroGateway {
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
     this.timeout = config.timeout ?? 15000;
-    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/0.1.0";
+    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/0.2.0";
     this.safeMode = config.safeMode ?? true;
     this.presets = config.presets ?? {};
     this.http = new HttpCore({
@@ -274,10 +274,9 @@ export class PteroServerHandle {
       variables: () => this.gateway.raw.client.get(`/servers/${this.identifier}/startup`),
       set: async (env: string, value: string | number | boolean) => {
         const raw = await this.gateway.raw.client.get(`/servers/${this.identifier}/startup`);
-        const variable = getCollection(asObject(getDataAttributes(raw)).relationships).find(item => String(asObject(item.attributes ?? item).env_variable) === env);
-        const attributes = variable ? asObject(variable.attributes ?? variable) : undefined;
-        const id = attributes?.startup_variable ?? attributes?.id;
-        if (!id) throw new PteroError({ code: "STARTUP_VARIABLE_NOT_FOUND", message: `Variable ${env} tidak ditemukan.`, hint: "Cek daftar startup variables pada egg/server." });
+        const relationships = asObject(getDataAttributes(raw).relationships);
+        const variable = getCollection(relationships.variables).find(item => String(asObject(item.attributes ?? item).env_variable) === env);
+        if (!variable) throw new PteroError({ code: "STARTUP_VARIABLE_NOT_FOUND", message: `Variable ${env} tidak ditemukan.`, hint: "Cek daftar startup variables pada egg/server." });
         return this.gateway.raw.client.put(`/servers/${this.identifier}/startup/variable`, { key: String(env), value: String(value) });
       },
       setMany: async (values: Record<string, string | number | boolean>) => {
