@@ -2,13 +2,13 @@
 
 SDK TypeScript dan CLI sederhana untuk membantu project Node.js terhubung ke Pterodactyl Panel dengan lebih mudah.
 
-Package ini dibuat untuk kebutuhan bot reseller panel, dashboard custom, automation server, dan admin tools. Fokus v0.2.x adalah memperluas kontrol server dengan file manager, startup variables, network allocations, dan database manager, sambil tetap menjaga smart create user/server, preview, dry run, error tutorial, raw request, test, dan pack check.
+Package ini dibuat untuk kebutuhan bot reseller panel, dashboard custom, automation server, dan admin tools. Fokus v0.2.x adalah memperluas kontrol server dengan file manager, startup variables, network allocations, database manager, backup manager, dan schedules, sambil tetap menjaga smart create user/server, preview, dry run, error tutorial, raw request, test, dan pack check.
 
 Package ini bukan package resmi dari Pterodactyl dan tidak berafiliasi dengan Pterodactyl Software.
 
 ## Status
 
-Versi saat ini: `0.2.1`
+Versi saat ini: `0.2.2`
 
 Fitur utama:
 
@@ -53,6 +53,20 @@ Fitur utama:
 - `server(identifier).databases.create()`
 - `server(identifier).databases.rotatePassword()`
 - `server(identifier).databases.delete()`
+- `server(identifier).backups.list()`
+- `server(identifier).backups.create()`
+- `server(identifier).backups.details()`
+- `server(identifier).backups.download()`
+- `server(identifier).backups.delete()`
+- `server(identifier).schedules.list()`
+- `server(identifier).schedules.create()`
+- `server(identifier).schedules.details()`
+- `server(identifier).schedules.update()`
+- `server(identifier).schedules.run()`
+- `server(identifier).schedules.delete()`
+- `server(identifier).schedules.tasks.create()`
+- `server(identifier).schedules.tasks.update()`
+- `server(identifier).schedules.tasks.delete()`
 - parser RAM, disk, CPU
 - error tutorial
 - CLI dasar `ptero-gateway`
@@ -88,7 +102,7 @@ Penjelasan:
 
 - `PTERO_DOMAIN` adalah domain panel Pterodactyl.
 - `PTERO_PTLA` adalah Application API Key untuk aksi admin seperti create user dan create server.
-- `PTERO_PTLC` adalah Client API Key untuk kontrol server seperti start, stop, command, resources, file manager, startup variables, network allocations, database manager, dan realtime pada versi berikutnya.
+- `PTERO_PTLC` adalah Client API Key untuk kontrol server seperti start, stop, command, resources, file manager, startup variables, network allocations, database manager, backups, schedules, dan realtime pada versi berikutnya.
 
 ## Koneksi cepat
 
@@ -261,6 +275,40 @@ await server.databases.create({ database: "botdb" });
 await server.databases.create({ database: "botdb", remote: "%" });
 await server.databases.rotatePassword("database-id");
 await server.databases.delete("database-id");
+```
+
+## Backup manager
+
+```ts
+const backups = await server.backups.list();
+await server.backups.create({
+  name: "before-update",
+  ignored: ["node_modules"],
+  isLocked: false
+});
+await server.backups.details("backup-id");
+await server.backups.download("backup-id");
+await server.backups.delete("backup-id");
+```
+
+## Schedules
+
+```ts
+const schedules = await server.schedules.list();
+await server.schedules.create({
+  name: "Daily restart",
+  minute: "0",
+  hour: "3",
+  dayOfMonth: "*",
+  month: "*",
+  dayOfWeek: "*"
+});
+await server.schedules.run(1);
+await server.schedules.tasks.create(1, {
+  action: "power",
+  payload: "restart",
+  timeOffset: 0
+});
 ```
 
 ## Dry run
