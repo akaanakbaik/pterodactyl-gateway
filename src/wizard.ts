@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { createPtero } from "./index.js";
+import type { CreateSmartServerInput, ServerSpecsInput } from "./types.js";
 
 const PRESETS = ["mini", "basic", "standard", "premium", "unlimited"];
 
@@ -8,6 +9,11 @@ type WizardFlags = {
   dryRun: boolean;
   yes: boolean;
   json: boolean;
+};
+
+type WizardCreateServerPayload = Omit<CreateSmartServerInput, "specs"> & {
+  preset?: string;
+  specs?: Partial<ServerSpecsInput>;
 };
 
 export async function runWizard(args: string[]) {
@@ -86,7 +92,7 @@ async function wizardCreateServer(flags: WizardFlags) {
     const allocations = await optionalNumber(rl, "Allocation limit override (kosong = preset)");
     const backups = await optionalNumber(rl, "Backup limit override (kosong = preset)");
 
-    const inputPayload = {
+    const inputPayload: WizardCreateServerPayload = {
       name,
       email,
       username: username || undefined,
@@ -113,9 +119,10 @@ async function wizardCreateServer(flags: WizardFlags) {
     console.log(JSON.stringify(maskPayload(inputPayload), null, 2));
 
     const ptero = createPtero.fromEnv();
+    const normalizedInput = normalizeCreateServerInput(inputPayload);
 
     if (flags.dryRun) {
-      const result = await ptero.servers.createSmart(normalizeCreateServerInput(inputPayload), { dryRun: true });
+      const result = await ptero.servers.createSmart(normalizedInput, { dryRun: true });
       printResult(result, flags, "Create server dry-run OK.");
       return;
     }
@@ -128,21 +135,21 @@ async function wizardCreateServer(flags: WizardFlags) {
       }
     }
 
-    const result = await ptero.servers.createSmart(normalizeCreateServerInput(inputPayload));
+    const result = await ptero.servers.createSmart(normalizedInput);
     printResult(result, flags, "Server berhasil dibuat.");
   } finally {
     rl.close();
   }
 }
 
-function normalizeCreateServerInput(inputPayload: Record<string, unknown>) {
-  const preset = String(inputPayload.preset ?? "basic");
+function normalizeCreateServerInput(inputPayload: WizardCreateServerPayload): CreateSmartServerInput {
+  const preset = inputPayload.preset ?? "basic";
   const fallback = presetToSpecs(preset);
-  const specs = { ...fallback, ...(inputPayload.specs as Record<string, unknown>) };
+  const specs: ServerSpecsInput = { ...fallback, ...inputPayload.specs };
   return { ...inputPayload, specs };
 }
 
-function presetToSpecs(preset: string) {
+function presetToSpecs(preset: string): ServerSpecsInput {
   if (preset === "mini") return { memory: "512MB", disk: "1GB", cpu: "50%", databases: 0, allocations: 1, backups: 0, swap: 0, io: 500 };
   if (preset === "standard") return { memory: "2GB", disk: "5GB", cpu: "200%", databases: 1, allocations: 1, backups: 1, swap: 0, io: 500 };
   if (preset === "premium") return { memory: "4GB", disk: "10GB", cpu: "300%", databases: 2, allocations: 2, backups: 2, swap: 0, io: 500 };
