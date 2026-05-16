@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPtero, explainError, parseCpu, parseSizeToMiB, PteroError } from "../dist/index.js";
+import { createIntegrationServerInput, createIntegrationService, createPtero, explainError, getIntegrationKinds, parseCpu, parseSizeToMiB, PteroError } from "../dist/index.js";
 
 test("parseSizeToMiB mengubah GB dan MB ke MiB", () => {
   assert.equal(parseSizeToMiB("2GB"), 2048);
@@ -11,6 +11,38 @@ test("parseSizeToMiB mengubah GB dan MB ke MiB", () => {
 test("parseCpu menerima angka dan persen", () => {
   assert.equal(parseCpu("100%"), 100);
   assert.equal(parseCpu(250), 250);
+});
+
+test("integration helper membuat input server bot dan website", () => {
+  assert.ok(getIntegrationKinds().includes("whatsapp-bot"));
+  const input = createIntegrationServerInput({
+    kind: "whatsapp-bot",
+    name: "WA Bot Aka",
+    email: "aka@example.com",
+    username: "aka_wa",
+    password: "auto",
+    autoCreateUser: true,
+    nodeId: 1,
+    nestId: 5,
+    eggId: 18,
+    environment: { OWNER: "aka" }
+  });
+  assert.equal(input.name, "WA Bot Aka");
+  assert.equal(input.preset, "standard");
+  assert.equal(input.startup, "npm start");
+  assert.equal(input.dockerImage, "auto");
+  assert.equal(input.environment.BOT_PLATFORM, "whatsapp");
+  assert.equal(input.environment.OWNER, "aka");
+  assert.equal(input.specs?.memory, "2GB");
+});
+
+test("integration service menerapkan default node nest egg", () => {
+  const service = createIntegrationService({ domain: "https://panel.example.com", ptla: "ptla_test", fetcher: async () => json({}) }, { nodeId: 1, nestId: 5, eggId: 18, preset: "basic" });
+  const input = service.input({ kind: "telegram-bot", name: "TG Bot", email: "tg@example.com" });
+  assert.equal(input.nodeId, 1);
+  assert.equal(input.nestId, 5);
+  assert.equal(input.eggId, 18);
+  assert.equal(input.preset, "basic");
 });
 
 test("explainError membuat pesan tutorial", () => {
