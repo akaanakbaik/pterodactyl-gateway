@@ -185,6 +185,7 @@ export class PteroGateway {
       password: input.password ?? "auto",
       administrator: input.administrator ?? false
     });
+    if ("dryRun" in user) throw new PteroError({ code: "INTERNAL_DRY_RUN_USER", message: "Dry run user tidak valid pada flow create server." });
     return { id: user.id, email: user.email, username: user.username, created: true };
   }
 
