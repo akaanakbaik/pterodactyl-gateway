@@ -1,0 +1,50 @@
+{
+  "name": "@akadev/pterodactyl-gateway",
+  "version": "0.1.0",
+  "description": "SDK, CLI, dan smart gateway TypeScript untuk Pterodactyl Panel.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "ptero-gateway": "./dist/cli.js",
+    "ptg": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "BLUEPRINT.md",
+    "add-promt.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.js",
+    "prepublishOnly": "npm run typecheck && npm test"
+  },
+  "keywords": [
+    "pterodactyl",
+    "pterodactyl-panel",
+    "pterodactyl-api",
+    "pterodactyl-sdk",
+    "pterodactyl-gateway",
+    "server-control",
+    "typescript"
+  ],
+  "author": "akaanakbaik",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "typescript": "^5.4.5"
+  }
+}
