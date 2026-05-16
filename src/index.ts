@@ -1,6 +1,8 @@
 export { PteroGateway } from "./gateway.js";
 export { PteroError, explainError } from "./errors.js";
 export { formatMiB, maskSecret, normalizeDomain, parseCpu, parseSizeToMiB } from "./utils.js";
+export { createIntegrationServerInput, createIntegrationService, getIntegrationDefaults, getIntegrationKinds } from "./integrations.js";
+export type { IntegrationDefaults, IntegrationKind, IntegrationPreset, IntegrationServerInput } from "./integrations.js";
 export * from "./types.js";
 
 import { PteroGateway } from "./gateway.js";
