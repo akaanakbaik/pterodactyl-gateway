@@ -1,6 +1,6 @@
 {
   "name": "@akaanakbaik/pterodactyl-gateway",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "description": "SDK, CLI, dan smart gateway TypeScript untuk Pterodactyl Panel.",
   "type": "module",
   "main": "./dist/index.js",

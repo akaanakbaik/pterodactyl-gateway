@@ -8,7 +8,7 @@ Package ini cocok untuk bot reseller panel, dashboard custom, automation server,
 
 ## Status
 
-Versi saat ini: `0.9.1`
+Versi saat ini: `1.0.0`
 
 - npm package: `@akaanakbaik/pterodactyl-gateway`
 - CLI utama: `ptero-gateway` dan `ptg`
@@ -373,8 +373,8 @@ npm run verify
 ```bash
 npm run verify
 npm publish --access public
-npm view @akaanakbaik/pterodactyl-gateway@0.9.1 version --prefer-online --registry=https://registry.npmjs.org/
-npm i -g @akaanakbaik/pterodactyl-gateway@0.9.1 --force --prefer-online --registry=https://registry.npmjs.org/
+npm view @akaanakbaik/pterodactyl-gateway@1.0.0 version --prefer-online --registry=https://registry.npmjs.org/
+npm i -g @akaanakbaik/pterodactyl-gateway@1.0.0 --force --prefer-online --registry=https://registry.npmjs.org/
 ptero-gateway self-check
 ptero-gateway release-check
 ```
