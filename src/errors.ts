@@ -86,7 +86,7 @@ export function noFreeAllocation(nodeId: number): PteroError {
     steps: [
       "Buka Admin Panel Pterodactyl.",
       "Masuk ke menu Nodes.",
-      `Pilih Node ID ${nodeId}.",
+      `Pilih Node ID ${nodeId}.`,
       "Buka tab Allocations.",
       "Tambahkan IP dan port baru.",
       "Pastikan allocation belum dipakai server lain.",
