@@ -10,7 +10,7 @@ const EXPLAINS: Record<string, { title: string; reason: string; fix: string[] }>
     reason: "Env PTERO_DOMAIN belum tersedia atau config createPtero belum berisi domain/panelUrl.",
     fix: [
       "export PTERO_DOMAIN=\"https://panel.example.com\"",
-      "pastikan tidak ada spasi/kutip rusak pada env",
+      "atau pakai: ptero-gateway config init --domain https://panel.example.com --ptla ptla_xxx --ptlc ptlc_xxx",
       "jalankan ulang: ptero-gateway doctor"
     ]
   },
@@ -20,7 +20,7 @@ const EXPLAINS: Record<string, { title: string; reason: string; fix: string[] }>
     fix: [
       "buat Application API Key di panel admin Pterodactyl",
       "export PTERO_PTLA=\"ptla_xxx\"",
-      "jalankan: ptero-gateway doctor"
+      "atau simpan di profile: ptero-gateway config init --domain ... --ptla ptla_xxx"
     ]
   },
   PTLC_REQUIRED: {
@@ -29,7 +29,7 @@ const EXPLAINS: Record<string, { title: string; reason: string; fix: string[] }>
     fix: [
       "buat Client API Key dari account panel",
       "export PTERO_PTLC=\"ptlc_xxx\"",
-      "jalankan: ptero-gateway doctor"
+      "atau simpan di profile: ptero-gateway config init --domain ... --ptlc ptlc_xxx"
     ]
   },
   DOCKER_IMAGE_NOT_FOUND: {
@@ -106,6 +106,9 @@ if (command === "help" || command === "--help" || command === "-h") {
     "PTERO_PTLC=ptlc_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
   ].join("\n");
   console.log(content);
+} else if (command === "config") {
+  const { configCommand } = await import("./config.js");
+  await configCommand(rawArgs.slice(1));
 } else if (command === "explain") {
   const code = (rawArgs[1] ?? "").toUpperCase();
   const result = EXPLAINS[code];
@@ -117,6 +120,8 @@ if (command === "help" || command === "--help" || command === "-h") {
     console.log(`${result.title}\n\nPenyebab:\n${result.reason}\n\nCara perbaikan:\n${result.fix.map((item, index) => `${index + 1}. ${item}`).join("\n")}`);
   }
 } else {
+  const { applyConfigProfile } = await import("./config.js");
+  applyConfigProfile();
   await import("./cli.js");
 }
 
@@ -124,6 +129,11 @@ function printHelp() {
   console.log(`Akadev Pterodactyl Gateway
 
 Perintah:
+  ptero-gateway config help
+  ptero-gateway config init --domain https://panel.example.com --ptla ptla_xxx --ptlc ptlc_xxx
+  ptero-gateway config list
+  ptero-gateway config use <profile>
+  ptero-gateway config doctor
   ptero-gateway presets [--json]
   ptero-gateway explain <ERROR_CODE> [--json]
   ptero-gateway env-template
