@@ -2,13 +2,13 @@
 
 SDK TypeScript dan CLI sederhana untuk membantu project Node.js terhubung ke Pterodactyl Panel dengan lebih mudah.
 
-Package ini dibuat untuk kebutuhan bot reseller panel, dashboard custom, automation server, dan admin tools. Fokus v0.2.0 adalah memperluas kontrol server dengan file manager dan startup variables, sambil tetap menjaga smart create user/server, preview, dry run, error tutorial, raw request, test, dan pack check.
+Package ini dibuat untuk kebutuhan bot reseller panel, dashboard custom, automation server, dan admin tools. Fokus v0.2.x adalah memperluas kontrol server dengan file manager, startup variables, network allocations, dan database manager, sambil tetap menjaga smart create user/server, preview, dry run, error tutorial, raw request, test, dan pack check.
 
 Package ini bukan package resmi dari Pterodactyl dan tidak berafiliasi dengan Pterodactyl Software.
 
 ## Status
 
-Versi saat ini: `0.2.0`
+Versi saat ini: `0.2.1`
 
 Fitur utama:
 
@@ -44,6 +44,15 @@ Fitur utama:
 - `server(identifier).startup.variables()`
 - `server(identifier).startup.set()`
 - `server(identifier).startup.setMany()`
+- `server(identifier).network.list()`
+- `server(identifier).network.assign()`
+- `server(identifier).network.setNote()`
+- `server(identifier).network.setPrimary()`
+- `server(identifier).network.delete()`
+- `server(identifier).databases.list()`
+- `server(identifier).databases.create()`
+- `server(identifier).databases.rotatePassword()`
+- `server(identifier).databases.delete()`
 - parser RAM, disk, CPU
 - error tutorial
 - CLI dasar `ptero-gateway`
@@ -79,7 +88,7 @@ Penjelasan:
 
 - `PTERO_DOMAIN` adalah domain panel Pterodactyl.
 - `PTERO_PTLA` adalah Application API Key untuk aksi admin seperti create user dan create server.
-- `PTERO_PTLC` adalah Client API Key untuk kontrol server seperti start, stop, command, resources, file manager, startup variables, dan realtime pada versi berikutnya.
+- `PTERO_PTLC` adalah Client API Key untuk kontrol server seperti start, stop, command, resources, file manager, startup variables, network allocations, database manager, dan realtime pada versi berikutnya.
 
 ## Koneksi cepat
 
@@ -232,6 +241,26 @@ await server.startup.setMany({
   NODE_ENV: "production",
   STARTUP_FILE: "index.js"
 });
+```
+
+## Network allocations
+
+```ts
+const allocations = await server.network.list();
+await server.network.assign();
+await server.network.setNote(123, "API port");
+await server.network.setPrimary(123);
+await server.network.delete(123);
+```
+
+## Database manager
+
+```ts
+const databases = await server.databases.list();
+await server.databases.create({ database: "botdb" });
+await server.databases.create({ database: "botdb", remote: "%" });
+await server.databases.rotatePassword("database-id");
+await server.databases.delete("database-id");
 ```
 
 ## Dry run
