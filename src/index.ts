@@ -6,12 +6,16 @@ export * from "./types.js";
 import { PteroGateway } from "./gateway.js";
 import { PteroConfig } from "./types.js";
 
-export function createPtero(config: PteroConfig): PteroGateway {
-  return new PteroGateway(config);
-}
-
-createPtero.fromEnv = function fromEnv(env: NodeJS.ProcessEnv = process.env): PteroGateway {
-  return PteroGateway.fromEnv(env);
+type CreatePtero = {
+  (config: PteroConfig): PteroGateway;
+  fromEnv(env?: NodeJS.ProcessEnv): PteroGateway;
 };
+
+export const createPtero: CreatePtero = Object.assign(
+  (config: PteroConfig) => new PteroGateway(config),
+  {
+    fromEnv: (env: NodeJS.ProcessEnv = process.env) => PteroGateway.fromEnv(env)
+  }
+);
 
 export const ptero = createPtero;
