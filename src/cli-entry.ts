@@ -109,6 +109,9 @@ if (command === "help" || command === "--help" || command === "-h") {
 } else if (command === "config") {
   const { configCommand } = await import("./config.js");
   await configCommand(rawArgs.slice(1));
+} else if (command === "templates") {
+  const { templatesCommand } = await import("./templates.js");
+  templatesCommand(rawArgs.slice(1));
 } else if (command === "explain") {
   const code = (rawArgs[1] ?? "").toUpperCase();
   const result = EXPLAINS[code];
@@ -134,6 +137,9 @@ Perintah:
   ptero-gateway config list
   ptero-gateway config use <profile>
   ptero-gateway config doctor
+  ptero-gateway templates list
+  ptero-gateway templates show nodejs-bot
+  ptero-gateway templates command nodejs-bot --name "bot saya" --email user@example.com --node 1 --nest 5 --egg 18
   ptero-gateway presets [--json]
   ptero-gateway explain <ERROR_CODE> [--json]
   ptero-gateway env-template
