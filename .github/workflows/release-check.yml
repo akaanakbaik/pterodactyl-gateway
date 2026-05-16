@@ -1,0 +1,47 @@
+name: Release Check
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  release-check:
+    name: Release package validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify source
+        run: npm run verify
+
+      - name: Pack tarball
+        run: npm pack
+
+      - name: Global install smoke test
+        run: |
+          npm i -g ./akaanakbaik-pterodactyl-gateway-*.tgz --force
+          ptero-gateway version
+          ptero-gateway self-check
+          ptero-gateway release-check
+          ptero-gateway templates list
+          ptero-wizard help
+
+      - name: Sensitive command help check
+        run: |
+          ptero-gateway help > help.txt
+          ! grep -E "admin node|admin nodes|allocation-summary|create-allocation" help.txt
