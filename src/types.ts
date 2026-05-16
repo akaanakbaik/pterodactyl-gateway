@@ -2,9 +2,9 @@ export type PteroMode = "full" | "admin" | "client" | "raw" | "invalid";
 
 export type BooleanLike = boolean | "yes" | "no" | "true" | "false" | "1" | "0";
 
-export type SizeInput = number | `${number}` | `${number}MB` | `${number}MiB` | `${number}GB` | `${number}GiB` | `${number}mb` | `${number}mib` | `${number}gb` | `${number}gib`;
+export type SizeInput = number | string;
 
-export type CpuInput = number | `${number}` | `${number}%`;
+export type CpuInput = number | string;
 
 export type PteroConfig = {
   domain?: string;
@@ -157,5 +157,3 @@ export type PteroRequestOptions = {
   contentType?: "json" | "text";
   responseType?: "json" | "text";
 };
-
-export type ServerPowerSignal = "start" | "stop" | "restart" | "kill";
