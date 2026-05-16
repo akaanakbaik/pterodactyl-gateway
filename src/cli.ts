@@ -4,7 +4,8 @@ import { createPtero, explainError } from "./index.js";
 const rawArgs = process.argv.slice(2);
 const jsonMode = rawArgs.includes("--json");
 const yesMode = rawArgs.includes("--yes") || rawArgs.includes("-y");
-const args = rawArgs.filter(arg => arg !== "--json" && arg !== "--yes" && arg !== "-y");
+const dryRunMode = rawArgs.includes("--dry-run");
+const args = rawArgs.filter(arg => arg !== "--json" && arg !== "--yes" && arg !== "-y" && arg !== "--dry-run");
 const command = args[0] ?? "help";
 
 async function main() {
@@ -45,7 +46,7 @@ async function main() {
 
   if (command === "admin") {
     const scope = args[1];
-    if (!scope) throw new Error("Format: ptero-gateway admin <users|servers|server>");
+    if (!scope) throw new Error("Format: ptero-gateway admin <users|servers|server|create-user|create-server>");
 
     if (scope === "users") {
       const result = await ptero.raw.application.get("/users?per_page=100");
@@ -56,6 +57,25 @@ async function main() {
     if (scope === "servers") {
       const result = await ptero.raw.application.get("/servers?per_page=100");
       output(result, formatAdminServers(result));
+      return;
+    }
+
+    if (scope === "create-user") {
+      if (!dryRunMode) requireYes("create user");
+      const username = getRequiredOption("--username");
+      const email = getRequiredOption("--email");
+      const password = getOption("--password") ?? "auto";
+      const administrator = parseBooleanOption("--admin", false);
+      const result = await ptero.users.createSmart({ username, email, password, administrator }, { dryRun: dryRunMode });
+      output(result, dryRunMode ? formatDryRun("Create user", result) : formatCreatedUser(result));
+      return;
+    }
+
+    if (scope === "create-server") {
+      if (!dryRunMode) requireYes("create server");
+      const input = buildCreateServerInput();
+      const result = await ptero.servers.createSmart(input, { dryRun: dryRunMode });
+      output(result, dryRunMode ? formatDryRun("Create server", result) : formatCreatedServer(result));
       return;
     }
 
@@ -211,6 +231,12 @@ function getOption(name: string): string | undefined {
   return args[index + 1];
 }
 
+function getRequiredOption(name: string): string {
+  const value = getOption(name);
+  if (!value) throw new Error(`Opsi ${name} wajib diisi.`);
+  return value;
+}
+
 function getNumberOption(name: string, fallback: number): number {
   const value = getOption(name);
   if (value === undefined) return fallback;
@@ -219,8 +245,42 @@ function getNumberOption(name: string, fallback: number): number {
   return parsed;
 }
 
+function parseBooleanOption(name: string, fallback: boolean): boolean {
+  const value = getOption(name);
+  if (value === undefined) return fallback;
+  if (["1", "true", "yes", "y"].includes(value.toLowerCase())) return true;
+  if (["0", "false", "no", "n"].includes(value.toLowerCase())) return false;
+  throw new Error(`${name} harus true/false.`);
+}
+
 function errorResult(error: unknown) {
   return { error: error instanceof Error ? error.message : String(error) };
+}
+
+function buildCreateServerInput() {
+  const username = getOption("--username");
+  const password = getOption("--password");
+  return {
+    name: getRequiredOption("--name"),
+    email: getRequiredOption("--email"),
+    username,
+    password,
+    autoCreateUser: Boolean(username),
+    description: getOption("--description") ?? "Created by Akadev Pterodactyl Gateway",
+    nodeId: getNumberOption("--node", 1),
+    nestId: getNumberOption("--nest", 5),
+    eggId: getNumberOption("--egg", 18),
+    specs: {
+      memory: getOption("--memory") ?? "1GB",
+      disk: getOption("--disk") ?? "2GB",
+      cpu: getOption("--cpu") ?? "100%",
+      databases: getNumberOption("--databases", 0),
+      allocations: getNumberOption("--allocations", 1),
+      backups: getNumberOption("--backups", 0),
+      swap: getNumberOption("--swap", 0),
+      io: getNumberOption("--io", 500)
+    }
+  };
 }
 
 function buildLimitPayload(raw: unknown): Record<string, unknown> {
@@ -427,6 +487,36 @@ function formatAdminServerLimits(raw: unknown): string {
   return table(rows, ["name", "value"]);
 }
 
+function formatDryRun(title: string, raw: unknown): string {
+  const root = asRecord(raw);
+  const payload = asRecord(root.payload);
+  const preview = asRecord(root.preview);
+  const lines = [`${title} dry-run OK`, ""];
+  if (payload.username || payload.email) {
+    lines.push(`username: ${payload.username ?? "-"}`);
+    lines.push(`email: ${payload.email ?? "-"}`);
+  }
+  if (payload.name || preview.dockerImage) {
+    lines.push(`server: ${payload.name ?? "-"}`);
+    lines.push(`docker: ${preview.dockerImage ?? payload.docker_image ?? "-"}`);
+    lines.push(`startup: ${preview.startup ?? payload.startup ?? "-"}`);
+  }
+  lines.push("");
+  lines.push("Tambahkan --yes untuk eksekusi asli.");
+  lines.push("Gunakan --json untuk melihat payload lengkap.");
+  return lines.join("\n");
+}
+
+function formatCreatedUser(raw: unknown): string {
+  const root = asRecord(raw);
+  return [`User berhasil dibuat.`, `id: ${root.id ?? "-"}`, `username: ${root.username ?? "-"}`, `email: ${root.email ?? "-"}`, root.generatedPassword ? `password: ${root.generatedPassword}` : ""].filter(Boolean).join("\n");
+}
+
+function formatCreatedServer(raw: unknown): string {
+  const root = asRecord(raw);
+  return [`Server berhasil dibuat.`, `id: ${root.id ?? "-"}`, `identifier: ${root.identifier ?? "-"}`, `uuid: ${root.uuid ?? "-"}`, `name: ${root.name ?? "-"}`].join("\n");
+}
+
 function getAttributes(raw: unknown): Record<string, unknown> {
   const root = asRecord(raw);
   const data = asRecord(root.data);
@@ -509,6 +599,9 @@ Perintah:
   ptero-gateway servers [--json]
   ptero-gateway admin users [--json]
   ptero-gateway admin servers [--json]
+  ptero-gateway admin create-user --username aka_test --email user@example.com --password "secret" --yes
+  ptero-gateway admin create-server --name "aka test" --email user@example.com --node 1 --nest 5 --egg 18 --dry-run
+  ptero-gateway admin create-server --name "aka test" --email user@example.com --node 1 --nest 5 --egg 18 --yes
   ptero-gateway admin server <serverId> detail [--json]
   ptero-gateway admin server <serverId> limits [--json]
   ptero-gateway admin server <serverId> update-limits --backups 1 --yes
