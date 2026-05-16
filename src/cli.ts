@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
 import { createPtero, explainError } from "./index.js";
 
 const rawArgs = process.argv.slice(2);
@@ -13,11 +12,6 @@ const command = args[0] ?? "help";
 async function main() {
   if (command === "help" || command === "--help" || command === "-h") {
     printHelp();
-    return;
-  }
-
-  if (command === "version" || command === "--version" || command === "-v") {
-    console.log(readPackageVersion());
     return;
   }
 
@@ -53,7 +47,7 @@ async function main() {
 
   if (command === "admin") {
     const scope = args[1];
-    if (!scope) throw new Error("Format: ptero-gateway admin <users|servers|server|nodes|node|create-user|create-server>");
+    if (!scope) throw new Error("Format: ptero-gateway admin <users|servers|server|create-user|create-server>");
 
     if (scope === "users") {
       const result = await ptero.raw.application.get("/users?per_page=100");
@@ -65,49 +59,6 @@ async function main() {
       const result = await ptero.raw.application.get("/servers?per_page=100");
       output(result, formatAdminServers(result));
       return;
-    }
-
-    if (scope === "nodes") {
-      const result = await ptero.raw.application.get("/nodes?per_page=100");
-      output(result, formatAdminNodes(result));
-      return;
-    }
-
-    if (scope === "node") {
-      const nodeId = args[2];
-      const action = args[3] ?? "detail";
-      if (!nodeId) throw new Error("Format: ptero-gateway admin node <nodeId> <detail|allocations|allocation-summary|create-allocation>");
-
-      if (action === "detail") {
-        const result = await ptero.raw.application.get(`/nodes/${nodeId}`);
-        output(result, formatAdminNodeDetail(result));
-        return;
-      }
-
-      if (action === "allocations") {
-        const result = await ptero.raw.application.get(`/nodes/${nodeId}/allocations?per_page=100`);
-        output(result, formatAdminNodeAllocations(result));
-        return;
-      }
-
-      if (action === "allocation-summary") {
-        const result = await ptero.raw.application.get(`/nodes/${nodeId}/allocations?per_page=100`);
-        output(result, formatAdminAllocationSummary(result));
-        return;
-      }
-
-      if (action === "create-allocation") {
-        requireYes("create node allocation");
-        const ip = getRequiredOption("--ip");
-        const ports = parsePorts(getRequiredOption("--ports"));
-        const alias = getOption("--alias") ?? getOption("--ip-alias");
-        const payload = { ip, alias: alias ?? null, ports };
-        const result = await ptero.raw.application.post(`/nodes/${nodeId}/allocations`, payload);
-        output(result, `Allocation berhasil dibuat di node ${nodeId}: ${ip} ${ports.join(", ")}`);
-        return;
-      }
-
-      throw new Error(`Admin node action tidak dikenal: ${action}`);
     }
 
     if (scope === "create-user") {
@@ -342,25 +293,6 @@ function parseBooleanOption(name: string, fallback: boolean): boolean {
   throw new Error(`${name} harus true/false.`);
 }
 
-function parsePorts(value: string): string[] {
-  const ports: string[] = [];
-  for (const part of value.split(",").map(item => item.trim()).filter(Boolean)) {
-    if (part.includes("-")) {
-      const [startRaw, endRaw] = part.split("-");
-      const start = Number(startRaw);
-      const end = Number(endRaw);
-      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end > 65535 || start > end) throw new Error(`Range port tidak valid: ${part}`);
-      for (let port = start; port <= end; port++) ports.push(String(port));
-    } else {
-      const port = Number(part);
-      if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Port tidak valid: ${part}`);
-      ports.push(String(port));
-    }
-  }
-  if (ports.length === 0) throw new Error("Opsi --ports wajib berisi port, list, atau range. Contoh: --ports 2006-2010");
-  return [...new Set(ports)];
-}
-
 function errorResult(error: unknown) {
   return { error: error instanceof Error ? error.message : String(error) };
 }
@@ -564,75 +496,6 @@ function formatAdminServers(raw: unknown): string {
   return rows.length ? table(rows, ["id", "identifier", "name", "memory", "disk", "cpu", "backups"]) : "Server kosong.";
 }
 
-function formatAdminNodes(raw: unknown): string {
-  const rows = getCollection(raw).map(item => {
-    const attributes = asRecord(item.attributes);
-    const allocated = asRecord(attributes.allocated_resources);
-    return {
-      id: String(attributes.id ?? ""),
-      name: String(attributes.name ?? ""),
-      fqdn: String(attributes.fqdn ?? ""),
-      scheme: String(attributes.scheme ?? ""),
-      memory: String(attributes.memory ?? ""),
-      disk: String(attributes.disk ?? ""),
-      usedMemory: String(allocated.memory ?? ""),
-      usedDisk: String(allocated.disk ?? "")
-    };
-  });
-  return rows.length ? table(rows, ["id", "name", "fqdn", "scheme", "memory", "disk", "usedMemory", "usedDisk"]) : "Node kosong.";
-}
-
-function formatAdminNodeDetail(raw: unknown): string {
-  const attributes = getAttributes(raw);
-  const allocated = asRecord(attributes.allocated_resources);
-  return [
-    `ID: ${attributes.id ?? "-"}`,
-    `UUID: ${attributes.uuid ?? "-"}`,
-    `Name: ${attributes.name ?? "-"}`,
-    `FQDN: ${attributes.fqdn ?? "-"}`,
-    `Scheme: ${attributes.scheme ?? "-"}`,
-    `Behind proxy: ${attributes.behind_proxy ? "yes" : "no"}`,
-    `Maintenance: ${attributes.maintenance_mode ? "yes" : "no"}`,
-    `Memory: ${attributes.memory ?? "-"}`,
-    `Disk: ${attributes.disk ?? "-"}`,
-    `Used memory: ${allocated.memory ?? "-"}`,
-    `Used disk: ${allocated.disk ?? "-"}`,
-    `Upload size: ${attributes.upload_size ?? "-"}`,
-    `Daemon listen: ${attributes.daemon_listen ?? "-"}`,
-    `Daemon SFTP: ${attributes.daemon_sftp ?? "-"}`,
-    `Base: ${attributes.daemon_base ?? "-"}`
-  ].join("\n");
-}
-
-function formatAdminNodeAllocations(raw: unknown): string {
-  const rows = getCollection(raw).map(item => {
-    const attributes = asRecord(item.attributes);
-    return {
-      id: String(attributes.id ?? ""),
-      ip: String(attributes.ip ?? ""),
-      alias: String(attributes.alias ?? attributes.ip_alias ?? ""),
-      port: String(attributes.port ?? ""),
-      assigned: isAssignedAllocation(attributes.assigned) ? "yes" : "no",
-      notes: String(attributes.notes ?? "")
-    };
-  });
-  return rows.length ? table(rows, ["id", "ip", "alias", "port", "assigned", "notes"]) : "Allocation node kosong.";
-}
-
-function formatAdminAllocationSummary(raw: unknown): string {
-  const allocations = getCollection(raw).map(item => asRecord(item.attributes));
-  const total = allocations.length;
-  const used = allocations.filter(item => isAssignedAllocation(item.assigned)).length;
-  const free = total - used;
-  const firstFree = allocations.find(item => !isAssignedAllocation(item.assigned));
-  return [
-    `Total allocations: ${total}`,
-    `Used: ${used}`,
-    `Free: ${free}`,
-    `First free: ${firstFree ? `${firstFree.ip_alias ?? firstFree.alias ?? firstFree.ip ?? ""}:${firstFree.port ?? ""}` : "-"}`
-  ].join("\n");
-}
-
 function formatAdminServerDetail(raw: unknown): string {
   const attributes = getAttributes(raw);
   return [
@@ -748,21 +611,6 @@ function isSafeTmpPath(value: string): boolean {
   return value === "/tmp" || value.startsWith("/tmp/");
 }
 
-function isAssignedAllocation(value: unknown): boolean {
-  if (value === null || value === undefined || value === false || value === 0 || value === "") return false;
-  return true;
-}
-
-function readPackageVersion(): string {
-  try {
-    const raw = readFileSync(new URL("../package.json", import.meta.url), "utf8");
-    const parsed = JSON.parse(raw) as { version?: string };
-    return parsed.version ?? "unknown";
-  } catch {
-    return "unknown";
-  }
-}
-
 function formatBytes(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -801,18 +649,12 @@ function printHelp() {
   console.log(`Akadev Pterodactyl Gateway
 
 Perintah:
-  ptero-gateway version
   ptero-gateway doctor [--json]
   ptero-gateway connect [--json]
   ptero-gateway ids [--nest <nestId>] [--json]
   ptero-gateway servers [--json]
   ptero-gateway admin users [--json]
   ptero-gateway admin servers [--json]
-  ptero-gateway admin nodes [--json]
-  ptero-gateway admin node <nodeId> detail [--json]
-  ptero-gateway admin node <nodeId> allocations [--json]
-  ptero-gateway admin node <nodeId> allocation-summary [--json]
-  ptero-gateway admin node <nodeId> create-allocation --ip 0.0.0.0 --alias SG --ports 2006-2010 --yes
   ptero-gateway admin create-user --username aka_test --email user@example.com --password "secret" --yes
   ptero-gateway admin create-server --name "aka test" --email user@example.com --node 1 --nest 5 --egg 18 --dry-run
   ptero-gateway admin create-server --name "aka test" --email user@example.com --node 1 --nest 5 --egg 18 --yes
