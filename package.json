@@ -1,6 +1,6 @@
 {
   "name": "@akadev/pterodactyl-gateway",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "SDK, CLI, dan smart gateway TypeScript untuk Pterodactyl Panel.",
   "type": "module",
   "main": "./dist/index.js",
@@ -29,6 +29,7 @@
     "test": "npm run build && node --test test/*.test.js",
     "test:cli": "npm run build && node dist/cli.js help",
     "test:pack": "npm run build && npm pack --dry-run",
+    "cli": "node dist/cli.js",
     "verify": "npm run typecheck && npm test && npm run test:cli && npm run test:pack",
     "prepublishOnly": "npm run verify"
   },
