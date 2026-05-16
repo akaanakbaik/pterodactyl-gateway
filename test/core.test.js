@@ -101,6 +101,52 @@ test("startup set mencari variable lalu update value", async () => {
   assert.deepEqual(JSON.parse(String(calls[1].body)), { key: "BOT_TOKEN", value: "new-token" });
 });
 
+test("network allocation helper memakai endpoint benar", async () => {
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method ?? "GET", body: init?.body });
+    return json({ ok: true });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  const network = ptero.server("abc123").network;
+
+  await network.list();
+  await network.assign();
+  await network.setNote(55, "API port");
+  await network.setPrimary(55);
+  await network.delete(55);
+
+  assert.equal(calls[0].method, "GET");
+  assert.match(calls[0].url, /network\/allocations$/);
+  assert.equal(calls[1].method, "POST");
+  assert.equal(calls[2].method, "POST");
+  assert.deepEqual(JSON.parse(String(calls[2].body)), { notes: "API port" });
+  assert.match(calls[3].url, /network\/allocations\/55\/primary$/);
+  assert.equal(calls[4].method, "DELETE");
+});
+
+test("database helper memakai endpoint benar", async () => {
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method ?? "GET", body: init?.body });
+    return json({ ok: true });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  const databases = ptero.server("abc123").databases;
+
+  await databases.list();
+  await databases.create({ database: "botdb" });
+  await databases.rotatePassword("db123");
+  await databases.delete("db123");
+
+  assert.equal(calls[0].method, "GET");
+  assert.match(calls[0].url, /servers\/abc123\/databases$/);
+  assert.equal(calls[1].method, "POST");
+  assert.deepEqual(JSON.parse(String(calls[1].body)), { database: "botdb", remote: "%" });
+  assert.match(calls[2].url, /databases\/db123\/rotate-password$/);
+  assert.equal(calls[3].method, "DELETE");
+});
+
 test("createSmart dryRun membangun payload otomatis", async () => {
   const fetcher = async (url) => {
     const target = String(url);
