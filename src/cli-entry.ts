@@ -97,7 +97,9 @@ const EXPLAINS: Record<string, { title: string; reason: string; fix: string[] }>
   }
 };
 
-if (command === "env-template") {
+if (command === "help" || command === "--help" || command === "-h") {
+  printHelp();
+} else if (command === "env-template") {
   const content = [
     "PTERO_DOMAIN=https://panel.example.com",
     "PTERO_PTLA=ptla_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
@@ -116,4 +118,59 @@ if (command === "env-template") {
   }
 } else {
   await import("./cli.js");
+}
+
+function printHelp() {
+  console.log(`Akadev Pterodactyl Gateway
+
+Perintah:
+  ptero-gateway presets [--json]
+  ptero-gateway explain <ERROR_CODE> [--json]
+  ptero-gateway env-template
+  ptero-gateway doctor [--json]
+  ptero-gateway connect [--json]
+  ptero-gateway ids [--nest <nestId>] [--json]
+  ptero-gateway servers [--json]
+  ptero-gateway admin users [--json]
+  ptero-gateway admin servers [--json]
+  ptero-gateway admin create-user --username aka_test --email user@example.com --password "secret" --yes
+  ptero-gateway admin create-server --name "aka test" --email user@example.com --node 1 --nest 5 --egg 18 --preset basic --dry-run
+  ptero-gateway admin create-server --name "aka test" --email user@example.com --node 1 --nest 5 --egg 18 --preset standard --yes
+  ptero-gateway admin server <serverId> detail [--json]
+  ptero-gateway admin server <serverId> limits [--json]
+  ptero-gateway admin server <serverId> update-limits --backups 1 --yes
+  ptero-gateway admin server <serverId> suspend --yes
+  ptero-gateway admin server <serverId> unsuspend --yes
+  ptero-gateway admin server <serverId> reinstall --yes
+  ptero-gateway probe <identifier> [--json]
+  ptero-gateway server <identifier> summary [--json]
+  ptero-gateway server <identifier> resources [--json]
+  ptero-gateway server <identifier> files [directory] [--json]
+  ptero-gateway server <identifier> read <file>
+  ptero-gateway server <identifier> startup|env [--json]
+  ptero-gateway server <identifier> network|ports [--json]
+  ptero-gateway server <identifier> databases [--json]
+  ptero-gateway server <identifier> backups [--json]
+  ptero-gateway server <identifier> backup <uuid> [--json]
+  ptero-gateway server <identifier> delete-backup <uuid> --yes
+  ptero-gateway server <identifier> schedules [--json]
+  ptero-gateway server <identifier> write /tmp/test.txt "isi file" --yes
+  ptero-gateway server <identifier> write /index.js "isi file" --yes --allow-any-path
+  ptero-gateway server <identifier> init-node-alive --yes
+  ptero-gateway server <identifier> set-env KEY VALUE --yes
+  ptero-gateway server <identifier> create-backup --name "backup-name" --yes
+  ptero-gateway server <identifier> start --yes
+  ptero-gateway server <identifier> stop --yes
+  ptero-gateway server <identifier> restart --yes
+  ptero-gateway server <identifier> kill --yes
+  ptero-gateway server <identifier> command "npm start" --yes
+
+Preset:
+  mini, basic, standard, premium, unlimited
+  Spek preset bisa dioverride dengan --memory, --disk, --cpu, --databases, --allocations, --backups.
+
+Env:
+  PTERO_DOMAIN=https://panel.example.com
+  PTERO_PTLA=ptla_xxx
+  PTERO_PTLC=ptlc_xxx`);
 }
