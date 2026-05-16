@@ -1,6 +1,6 @@
 {
   "name": "@akaanakbaik/pterodactyl-gateway",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "SDK, CLI, dan smart gateway TypeScript untuk Pterodactyl Panel.",
   "type": "module",
   "main": "./dist/index.js",
@@ -29,7 +29,7 @@
     "chmod:bin": "node -e \"const fs=require('fs'); for (const f of ['dist/cli.js','dist/cli-entry.js','dist/wizard-cli.js']) if (fs.existsSync(f)) fs.chmodSync(f, 0o755)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/*.test.js",
-    "test:cli": "npm run build && node dist/cli-entry.js help && ./dist/cli-entry.js help && node dist/cli-entry.js presets && node dist/cli-entry.js templates list && node dist/cli-entry.js config help && node dist/cli-entry.js config doctor && node dist/cli-entry.js explain DOMAIN_REQUIRED && node dist/cli-entry.js env-template && node dist/wizard-cli.js help && ./dist/wizard-cli.js help",
+    "test:cli": "npm run build && node dist/cli-entry.js help && ./dist/cli-entry.js help && node dist/cli-entry.js version && node dist/cli-entry.js self-check && node dist/cli-entry.js release-check && node dist/cli-entry.js presets && node dist/cli-entry.js templates list && node dist/cli-entry.js config help && node dist/cli-entry.js config doctor && node dist/cli-entry.js explain DOMAIN_REQUIRED && node dist/cli-entry.js env-template && node dist/wizard-cli.js help && ./dist/wizard-cli.js help",
     "test:pack": "npm run build && npm pack --dry-run",
     "test:release": "node scripts/release-guard.js",
     "cli": "node dist/cli-entry.js",
