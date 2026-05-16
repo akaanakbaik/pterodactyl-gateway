@@ -1,13 +1,13 @@
 {
-  "name": "@akadev/pterodactyl-gateway",
+  "name": "@akaanakbaik/pterodactyl-gateway",
   "version": "0.3.0",
   "description": "SDK, CLI, dan smart gateway TypeScript untuk Pterodactyl Panel.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "ptero-gateway": "./dist/cli.js",
-    "ptg": "./dist/cli.js"
+    "ptero-gateway": "dist/cli.js",
+    "ptg": "dist/cli.js"
   },
   "exports": {
     ".": {
