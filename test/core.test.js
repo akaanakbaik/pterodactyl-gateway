@@ -38,6 +38,27 @@ test("connect mendeteksi full mode dengan mock fetch", async () => {
   assert.equal(calls.length, 2);
 });
 
+test("createUserSmart dryRun membangun payload user", async () => {
+  const ptero = createPtero({ domain: "https://panel.example.com", ptla: "ptla_test", fetcher: async () => json({}) });
+  const result = await ptero.users.createSmart({
+    username: "aka",
+    email: "aka@example.com",
+    password: "auto",
+    administrator: "no"
+  }, { dryRun: true });
+  assert.equal(result.dryRun, true);
+  assert.equal(result.payload.username, "aka");
+  assert.equal(result.payload.first_name, "aka");
+  assert.equal(result.payload.last_name, "aka");
+  assert.equal(result.payload.root_admin, false);
+  assert.equal(typeof result.generatedPassword, "string");
+});
+
+test("server command guard memblokir command berbahaya", () => {
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher: async () => json({}) });
+  assert.throws(() => ptero.server("abc123").command("rm -rf /"), /Command terlihat berbahaya/);
+});
+
 test("createSmart dryRun membangun payload otomatis", async () => {
   const fetcher = async (url) => {
     const target = String(url);
