@@ -1,6 +1,6 @@
 {
   "name": "@akadev/pterodactyl-gateway",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "SDK, CLI, dan smart gateway TypeScript untuk Pterodactyl Panel.",
   "type": "module",
   "main": "./dist/index.js",
@@ -24,10 +24,11 @@
   ],
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "npm run clean && tsc -p tsconfig.json",
+    "build": "npm run clean && tsc -p tsconfig.json && npm run chmod:bin",
+    "chmod:bin": "node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/*.test.js",
-    "test:cli": "npm run build && node dist/cli.js help",
+    "test:cli": "npm run build && node dist/cli.js help && ./dist/cli.js help",
     "test:pack": "npm run build && npm pack --dry-run",
     "cli": "node dist/cli.js",
     "verify": "npm run typecheck && npm test && npm run test:cli && npm run test:pack",
