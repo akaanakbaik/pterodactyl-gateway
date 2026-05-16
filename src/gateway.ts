@@ -21,7 +21,7 @@ export class PteroGateway {
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
     this.timeout = config.timeout ?? 15000;
-    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/0.2.2";
+    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/0.2.3";
     this.safeMode = config.safeMode ?? true;
     this.presets = config.presets ?? {};
     this.http = new HttpCore({
@@ -332,6 +332,18 @@ export class PteroServerHandle {
     };
   }
 
+  async probe() {
+    const checks: Record<string, { ok: boolean; message: string }> = {};
+    await probeStep(checks, "resources", () => this.resources());
+    await probeStep(checks, "files.list", () => this.files.list("/"));
+    await probeStep(checks, "startup.variables", () => this.startup.variables());
+    await probeStep(checks, "network.list", () => this.network.list());
+    await probeStep(checks, "databases.list", () => this.databases.list());
+    await probeStep(checks, "backups.list", () => this.backups.list());
+    await probeStep(checks, "schedules.list", () => this.schedules.list());
+    return { ok: Object.values(checks).every(check => check.ok), identifier: this.identifier, checks };
+  }
+
   resources() {
     return this.gateway.raw.client.get(`/servers/${this.identifier}/resources`);
   }
@@ -359,6 +371,15 @@ export class PteroServerHandle {
   command(command: string, options?: { allowDangerous?: boolean }) {
     if (!options?.allowDangerous && isDangerousCommand(command)) throw new PteroError({ code: "DANGEROUS_COMMAND_BLOCKED", message: "Command terlihat berbahaya dan diblokir oleh safe mode.", hint: "Gunakan allowDangerous: true hanya jika benar-benar paham risikonya." });
     return this.gateway.raw.client.post(`/servers/${this.identifier}/command`, { command });
+  }
+}
+
+async function probeStep(checks: Record<string, { ok: boolean; message: string }>, name: string, run: () => Promise<unknown>): Promise<void> {
+  try {
+    await run();
+    checks[name] = { ok: true, message: "OK" };
+  } catch (error) {
+    checks[name] = { ok: false, message: error instanceof Error ? error.message : String(error) };
   }
 }
 
