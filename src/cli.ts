@@ -50,15 +50,23 @@ async function main() {
   if (command === "server") {
     const id = args[1];
     const action = args[2];
-    if (!id || !action) throw new Error("Format: ptero-gateway server <identifier> <start|stop|restart|kill|resources|command>");
+    if (!id || !action) throw new Error("Format: ptero-gateway server <identifier> <action>");
     if (isPlaceholderIdentifier(id)) throw new Error("IDENTIFIER_SERVER hanya placeholder. Jalankan `ptero-gateway servers`, lalu salin nilai `identifier` server yang ingin dikontrol.");
     const server = ptero.server(id);
+
     if (action === "start") console.log(JSON.stringify(await server.start(), null, 2));
     else if (action === "stop") console.log(JSON.stringify(await server.stop(), null, 2));
     else if (action === "restart") console.log(JSON.stringify(await server.restart(), null, 2));
     else if (action === "kill") console.log(JSON.stringify(await server.kill(), null, 2));
     else if (action === "resources") console.log(JSON.stringify(await server.resources(), null, 2));
     else if (action === "command") console.log(JSON.stringify(await server.command(args.slice(3).join(" ")), null, 2));
+    else if (action === "files") console.log(JSON.stringify(await server.files.list(args[3] ?? "/"), null, 2));
+    else if (action === "read") console.log(await server.files.read(args[3] ?? "/"));
+    else if (action === "startup") console.log(JSON.stringify(await server.startup.variables(), null, 2));
+    else if (action === "network") console.log(JSON.stringify(await server.network.list(), null, 2));
+    else if (action === "databases") console.log(JSON.stringify(await server.databases.list(), null, 2));
+    else if (action === "backups") console.log(JSON.stringify(await server.backups.list(), null, 2));
+    else if (action === "schedules") console.log(JSON.stringify(await server.schedules.list(), null, 2));
     else throw new Error(`Action server tidak dikenal: ${action}`);
     return;
   }
@@ -100,6 +108,13 @@ Perintah:
   ptero-gateway servers
   ptero-gateway probe <identifier>
   ptero-gateway server <identifier> resources
+  ptero-gateway server <identifier> files [directory]
+  ptero-gateway server <identifier> read <file>
+  ptero-gateway server <identifier> startup
+  ptero-gateway server <identifier> network
+  ptero-gateway server <identifier> databases
+  ptero-gateway server <identifier> backups
+  ptero-gateway server <identifier> schedules
   ptero-gateway server <identifier> start
   ptero-gateway server <identifier> stop
   ptero-gateway server <identifier> restart
