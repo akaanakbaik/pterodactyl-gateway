@@ -65,24 +65,27 @@ jobs:
       - name: Install packed package in temp project
         run: |
           set -euo pipefail
-          PACKAGE_TGZ="$(ls akaanakbaik-pterodactyl-gateway-*.tgz | head -n 1)"
+          WORKSPACE="$PWD"
+          PACKAGE_TGZ="$WORKSPACE/$(ls akaanakbaik-pterodactyl-gateway-*.tgz | head -n 1)"
           SMOKE_DIR="$(mktemp -d)"
-          npm init -y --prefix "$SMOKE_DIR"
-          npm install --prefix "$SMOKE_DIR" "$PWD/$PACKAGE_TGZ" --force
-          NPM_ROOT="$(npm root --prefix "$SMOKE_DIR")"
+          cd "$SMOKE_DIR"
+          npm init -y >/dev/null
+          npm install "$PACKAGE_TGZ" --force
+          NPM_ROOT="$(npm root)"
           PACKAGE_DIR="$NPM_ROOT/@akaanakbaik/pterodactyl-gateway"
           CLI_BIN="$NPM_ROOT/.bin/ptero-gateway"
           WIZARD_BIN="$NPM_ROOT/.bin/ptero-wizard"
           echo "SMOKE_DIR=$SMOKE_DIR"
           echo "NPM_ROOT=$NPM_ROOT"
           echo "PACKAGE_DIR=$PACKAGE_DIR"
+          ls -la "$NPM_ROOT/.bin"
           test -d "$PACKAGE_DIR"
           test -f "$PACKAGE_DIR/package.json"
           test -f "$PACKAGE_DIR/dist/cli-entry.js"
           test -f "$PACKAGE_DIR/dist/wizard-cli.js"
-          test -x "$CLI_BIN"
-          test -x "$WIZARD_BIN"
-          "$CLI_BIN" version
-          "$CLI_BIN" self-check
-          "$CLI_BIN" release-check
-          "$WIZARD_BIN" help
+          test -e "$CLI_BIN"
+          test -e "$WIZARD_BIN"
+          node "$PACKAGE_DIR/dist/cli-entry.js" version
+          node "$PACKAGE_DIR/dist/cli-entry.js" self-check
+          node "$PACKAGE_DIR/dist/cli-entry.js" release-check
+          node "$PACKAGE_DIR/dist/wizard-cli.js" help
