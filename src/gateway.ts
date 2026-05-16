@@ -2,7 +2,7 @@ import { PteroError } from "./errors.js";
 import { HttpCore } from "./http.js";
 import { buildServerPayload, buildUserPayload, normalizeSpecs, normalizeUserResponse, progress, selectAllocations, validateCreateInput } from "./smart.js";
 import { ConnectResult, CreateSmartServerInput, CreateUserSmartInput, DoctorReport, NormalizedServer, OperationOptions, PreviewCreateServer, PteroConfig, PteroMode, ServerPowerSignal } from "./types.js";
-import { asObject, getDataAttributes, maskSecret, normalizeDomain } from "./utils.js";
+import { asObject, getCollection, getDataAttributes, maskSecret, normalizeDomain } from "./utils.js";
 
 export class PteroGateway {
   readonly domain: string;
@@ -52,8 +52,10 @@ export class PteroGateway {
       },
       client: {
         get: <T = unknown>(path: string) => this.request<T>({ api: "client", path }),
+        getText: (path: string) => this.request<string>({ api: "client", path, responseType: "text" }),
         post: <T = unknown>(path: string, body?: unknown) => this.request<T>({ api: "client", method: "POST", path, body }),
         put: <T = unknown>(path: string, body?: unknown) => this.request<T>({ api: "client", method: "PUT", path, body }),
+        putText: <T = unknown>(path: string, body: string) => this.request<T>({ api: "client", method: "PUT", path, body, contentType: "text" }),
         delete: <T = unknown>(path: string) => this.request<T>({ api: "client", method: "DELETE", path })
       }
     };
@@ -89,14 +91,7 @@ export class PteroGateway {
     const application = await this.checkApplicationKey();
     const client = await this.checkClientKey();
     const mode = this.resolveMode(application.valid, client.valid);
-    return {
-      ok: mode !== "invalid",
-      mode,
-      domain: this.domain,
-      latency: Date.now() - started,
-      application,
-      client
-    };
+    return { ok: mode !== "invalid", mode, domain: this.domain, latency: Date.now() - started, application, client };
   }
 
   async health(): Promise<ConnectResult> {
@@ -117,15 +112,7 @@ export class PteroGateway {
 
   async compatibility() {
     const connect = await this.connect();
-    return {
-      applicationApi: connect.application.valid,
-      clientApi: connect.client.valid,
-      websocket: connect.client.valid,
-      fileUpload: connect.client.valid,
-      schedules: connect.client.valid,
-      eggCreateEndpoint: false,
-      nestCreateEndpoint: false
-    };
+    return { applicationApi: connect.application.valid, clientApi: connect.client.valid, websocket: connect.client.valid, fileUpload: connect.client.valid, schedules: connect.client.valid, eggCreateEndpoint: false, nestCreateEndpoint: false };
   }
 
   async listIds(nestId?: number) {
@@ -158,12 +145,7 @@ export class PteroGateway {
     const first = data[0];
     if (!first) return undefined;
     const attributes = asObject(asObject(first).attributes);
-    return {
-      id: Number(attributes.id ?? 0),
-      username: String(attributes.username ?? ""),
-      email: String(attributes.email ?? email),
-      raw: first
-    };
+    return { id: Number(attributes.id ?? 0), username: String(attributes.username ?? ""), email: String(attributes.email ?? email), raw: first };
   }
 
   private async resolveUserForServer(input: CreateSmartServerInput) {
@@ -171,20 +153,9 @@ export class PteroGateway {
     if (!input.email) throw new PteroError({ code: "EMAIL_REQUIRED", message: "email wajib diisi jika userId kosong." });
     const found = await this.findUserByEmail(input.email);
     if (found) return { id: found.id, email: found.email, username: found.username, created: false };
-    if (!input.autoCreateUser) {
-      throw new PteroError({
-        code: "USER_NOT_FOUND",
-        message: `User dengan email ${input.email} tidak ditemukan.`,
-        hint: "Aktifkan autoCreateUser atau buat user terlebih dahulu."
-      });
-    }
+    if (!input.autoCreateUser) throw new PteroError({ code: "USER_NOT_FOUND", message: `User dengan email ${input.email} tidak ditemukan.`, hint: "Aktifkan autoCreateUser atau buat user terlebih dahulu." });
     if (!input.username) throw new PteroError({ code: "USERNAME_REQUIRED_FOR_AUTO_CREATE_USER", message: "username wajib diisi saat autoCreateUser aktif." });
-    const user = await this.createUserSmart({
-      username: input.username,
-      email: input.email,
-      password: input.password ?? "auto",
-      administrator: input.administrator ?? false
-    });
+    const user = await this.createUserSmart({ username: input.username, email: input.email, password: input.password ?? "auto", administrator: input.administrator ?? false });
     if ("dryRun" in user) throw new PteroError({ code: "INTERNAL_DRY_RUN_USER", message: "Dry run user tidak valid pada flow create server." });
     return { id: user.id, email: user.email, username: user.username, created: true };
   }
@@ -207,16 +178,7 @@ export class PteroGateway {
     try {
       allocation = selectAllocations(rawAllocations, allocationCount, input.allocation ?? "auto");
     } catch (error) {
-      if (error instanceof PteroError && error.code === "NO_FREE_ALLOCATION") {
-        throw new PteroError({
-          code: "NO_FREE_ALLOCATION",
-          message: `Tidak ada allocation kosong di Node ID ${input.nodeId}.`,
-          hint: error.hint,
-          steps: error.steps,
-          example: error.example,
-          raw: error.raw
-        });
-      }
+      if (error instanceof PteroError && error.code === "NO_FREE_ALLOCATION") throw new PteroError({ code: "NO_FREE_ALLOCATION", message: `Tidak ada allocation kosong di Node ID ${input.nodeId}.`, hint: error.hint, steps: error.steps, example: error.example, raw: error.raw });
       throw error;
     }
     progress(options, "payload", 80, "Membangun payload server.");
@@ -249,13 +211,7 @@ export class PteroGateway {
     const raw = await this.raw.application.post("/servers", preview.payload);
     progress(options, "done", 100, "Server berhasil dibuat.");
     const attributes = getDataAttributes(raw);
-    return {
-      id: typeof attributes.id === "number" ? attributes.id : Number(attributes.id ?? 0) || undefined,
-      identifier: typeof attributes.identifier === "string" ? attributes.identifier : undefined,
-      uuid: typeof attributes.uuid === "string" ? attributes.uuid : undefined,
-      name: typeof attributes.name === "string" ? attributes.name : undefined,
-      raw
-    };
+    return { id: typeof attributes.id === "number" ? attributes.id : Number(attributes.id ?? 0) || undefined, identifier: typeof attributes.identifier === "string" ? attributes.identifier : undefined, uuid: typeof attributes.uuid === "string" ? attributes.uuid : undefined, name: typeof attributes.name === "string" ? attributes.name : undefined, raw };
   }
 
   private async checkApplicationKey() {
@@ -296,6 +252,42 @@ export class PteroServerHandle {
     this.identifier = identifier;
   }
 
+  get files() {
+    return {
+      list: (directory = "/") => this.gateway.raw.client.get(`/servers/${this.identifier}/files/list?directory=${encodeURIComponent(directory)}`),
+      read: (file: string) => this.gateway.raw.client.getText(`/servers/${this.identifier}/files/contents?file=${encodeURIComponent(file)}`),
+      write: (file: string, content: string) => this.gateway.raw.client.putText(`/servers/${this.identifier}/files/write?file=${encodeURIComponent(file)}`, content),
+      delete: (root: string, files: string[]) => this.gateway.raw.client.post(`/servers/${this.identifier}/files/delete`, { root, files }),
+      mkdir: (root: string, name: string) => this.gateway.raw.client.post(`/servers/${this.identifier}/files/create-folder`, { root, name }),
+      rename: (root: string, files: Array<{ from: string; to: string }>) => this.gateway.raw.client.put(`/servers/${this.identifier}/files/rename`, { root, files }),
+      compress: (root: string, files: string[]) => this.gateway.raw.client.post(`/servers/${this.identifier}/files/compress`, { root, files }),
+      decompress: (root: string, file: string) => this.gateway.raw.client.post(`/servers/${this.identifier}/files/decompress`, { root, file }),
+      json: {
+        read: async <T = unknown>(file: string) => JSON.parse(await this.gateway.raw.client.getText(`/servers/${this.identifier}/files/contents?file=${encodeURIComponent(file)}`)) as T,
+        write: (file: string, data: unknown, space = 2) => this.gateway.raw.client.putText(`/servers/${this.identifier}/files/write?file=${encodeURIComponent(file)}`, JSON.stringify(data, null, space))
+      }
+    };
+  }
+
+  get startup() {
+    return {
+      variables: () => this.gateway.raw.client.get(`/servers/${this.identifier}/startup`),
+      set: async (env: string, value: string | number | boolean) => {
+        const raw = await this.gateway.raw.client.get(`/servers/${this.identifier}/startup`);
+        const variable = getCollection(asObject(getDataAttributes(raw)).relationships).find(item => String(asObject(item.attributes ?? item).env_variable) === env);
+        const attributes = variable ? asObject(variable.attributes ?? variable) : undefined;
+        const id = attributes?.startup_variable ?? attributes?.id;
+        if (!id) throw new PteroError({ code: "STARTUP_VARIABLE_NOT_FOUND", message: `Variable ${env} tidak ditemukan.`, hint: "Cek daftar startup variables pada egg/server." });
+        return this.gateway.raw.client.put(`/servers/${this.identifier}/startup/variable`, { key: String(env), value: String(value) });
+      },
+      setMany: async (values: Record<string, string | number | boolean>) => {
+        const results: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(values)) results[key] = await this.startup.set(key, value);
+        return results;
+      }
+    };
+  }
+
   resources() {
     return this.gateway.raw.client.get(`/servers/${this.identifier}/resources`);
   }
@@ -321,13 +313,7 @@ export class PteroServerHandle {
   }
 
   command(command: string, options?: { allowDangerous?: boolean }) {
-    if (!options?.allowDangerous && isDangerousCommand(command)) {
-      throw new PteroError({
-        code: "DANGEROUS_COMMAND_BLOCKED",
-        message: "Command terlihat berbahaya dan diblokir oleh safe mode.",
-        hint: "Gunakan allowDangerous: true hanya jika benar-benar paham risikonya."
-      });
-    }
+    if (!options?.allowDangerous && isDangerousCommand(command)) throw new PteroError({ code: "DANGEROUS_COMMAND_BLOCKED", message: "Command terlihat berbahaya dan diblokir oleh safe mode.", hint: "Gunakan allowDangerous: true hanya jika benar-benar paham risikonya." });
     return this.gateway.raw.client.post(`/servers/${this.identifier}/command`, { command });
   }
 }
