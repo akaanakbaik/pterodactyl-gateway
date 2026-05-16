@@ -147,6 +147,60 @@ test("database helper memakai endpoint benar", async () => {
   assert.equal(calls[3].method, "DELETE");
 });
 
+test("backup helper memakai endpoint benar", async () => {
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method ?? "GET", body: init?.body });
+    return json({ ok: true });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  const backups = ptero.server("abc123").backups;
+
+  await backups.list();
+  await backups.create({ name: "before-update", ignored: ["node_modules"], isLocked: true });
+  await backups.details("backup123");
+  await backups.download("backup123");
+  await backups.delete("backup123");
+
+  assert.equal(calls[0].method, "GET");
+  assert.match(calls[0].url, /servers\/abc123\/backups$/);
+  assert.equal(calls[1].method, "POST");
+  assert.deepEqual(JSON.parse(String(calls[1].body)), { name: "before-update", ignored: ["node_modules"], is_locked: true });
+  assert.match(calls[3].url, /backups\/backup123\/download$/);
+  assert.equal(calls[4].method, "DELETE");
+});
+
+test("schedule helper memakai endpoint benar", async () => {
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method ?? "GET", body: init?.body });
+    return json({ ok: true });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  const schedules = ptero.server("abc123").schedules;
+
+  await schedules.list();
+  await schedules.create({ name: "Daily restart", minute: "0", hour: "3", dayOfMonth: "*", month: "*", dayOfWeek: "*" });
+  await schedules.details(7);
+  await schedules.update(7, { name: "Night restart", isActive: false });
+  await schedules.run(7);
+  await schedules.tasks.create(7, { action: "power", payload: "restart", timeOffset: 0 });
+  await schedules.tasks.update(7, 8, { payload: "start", continueOnFailure: true });
+  await schedules.tasks.delete(7, 8);
+  await schedules.delete(7);
+
+  assert.equal(calls[0].method, "GET");
+  assert.match(calls[0].url, /servers\/abc123\/schedules$/);
+  assert.equal(calls[1].method, "POST");
+  assert.deepEqual(JSON.parse(String(calls[1].body)), { name: "Daily restart", minute: "0", hour: "3", day_of_month: "*", month: "*", day_of_week: "*", is_active: true, only_when_online: false });
+  assert.deepEqual(JSON.parse(String(calls[3].body)), { name: "Night restart", is_active: false });
+  assert.match(calls[4].url, /schedules\/7\/execute$/);
+  assert.deepEqual(JSON.parse(String(calls[5].body)), { action: "power", payload: "restart", time_offset: 0, continue_on_failure: false });
+  assert.deepEqual(JSON.parse(String(calls[6].body)), { payload: "start", continue_on_failure: true });
+  assert.equal(calls[7].method, "DELETE");
+  assert.equal(calls[8].method, "DELETE");
+});
+
 test("createSmart dryRun membangun payload otomatis", async () => {
   const fetcher = async (url) => {
     const target = String(url);
