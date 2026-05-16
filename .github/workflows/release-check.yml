@@ -32,16 +32,28 @@ jobs:
       - name: Pack tarball
         run: npm pack
 
-      - name: Global install smoke test
+      - name: Install packed package in temp project
         run: |
-          npm i -g ./akaanakbaik-pterodactyl-gateway-*.tgz --force
-          ptero-gateway version
-          ptero-gateway self-check
-          ptero-gateway release-check
-          ptero-gateway templates list
-          ptero-wizard help
+          set -euo pipefail
+          PACKAGE_TGZ="$(ls akaanakbaik-pterodactyl-gateway-*.tgz | head -n 1)"
+          SMOKE_DIR="$(mktemp -d)"
+          npm install --prefix "$SMOKE_DIR" "$PWD/$PACKAGE_TGZ" --force
+          CLI="$SMOKE_DIR/node_modules/@akaanakbaik/pterodactyl-gateway/dist/cli-entry.js"
+          WIZARD="$SMOKE_DIR/node_modules/@akaanakbaik/pterodactyl-gateway/dist/wizard-cli.js"
+          test -f "$CLI"
+          test -f "$WIZARD"
+          node "$CLI" version
+          node "$CLI" self-check
+          node "$CLI" release-check
+          node "$CLI" templates list
+          node "$WIZARD" help
 
       - name: Sensitive command help check
         run: |
-          ptero-gateway help > help.txt
+          set -euo pipefail
+          PACKAGE_TGZ="$(ls akaanakbaik-pterodactyl-gateway-*.tgz | head -n 1)"
+          SMOKE_DIR="$(mktemp -d)"
+          npm install --prefix "$SMOKE_DIR" "$PWD/$PACKAGE_TGZ" --force
+          CLI="$SMOKE_DIR/node_modules/@akaanakbaik/pterodactyl-gateway/dist/cli-entry.js"
+          node "$CLI" help > help.txt
           ! grep -E "admin node|admin nodes|allocation-summary|create-allocation" help.txt
