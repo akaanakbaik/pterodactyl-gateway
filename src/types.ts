@@ -154,6 +154,8 @@ export type PteroRequestOptions = {
   method?: string;
   path: string;
   body?: unknown;
+  contentType?: "json" | "text";
+  responseType?: "json" | "text";
 };
 
 export type ServerPowerSignal = "start" | "stop" | "restart" | "kill";
