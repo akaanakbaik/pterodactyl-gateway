@@ -6,6 +6,8 @@ export type SizeInput = number | string;
 
 export type CpuInput = number | string;
 
+export type ServerPowerSignal = "start" | "stop" | "restart" | "kill";
+
 export type PteroConfig = {
   domain?: string;
   panelUrl?: string;
