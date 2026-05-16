@@ -9,9 +9,25 @@ const allowAnyPath = rawArgs.includes("--allow-any-path");
 const args = rawArgs.filter(arg => arg !== "--json" && arg !== "--yes" && arg !== "-y" && arg !== "--dry-run" && arg !== "--allow-any-path");
 const command = args[0] ?? "help";
 
+const SERVER_PRESETS = {
+  mini: { memory: "512MB", disk: "1GB", cpu: "50%", databases: 0, allocations: 1, backups: 0, swap: 0, io: 500, description: "Ringan untuk bot kecil atau testing." },
+  basic: { memory: "1GB", disk: "2GB", cpu: "100%", databases: 0, allocations: 1, backups: 0, swap: 0, io: 500, description: "Default aman untuk bot Node.js sederhana." },
+  standard: { memory: "2GB", disk: "5GB", cpu: "200%", databases: 1, allocations: 1, backups: 1, swap: 0, io: 500, description: "Untuk bot/API sedang dan project aktif." },
+  premium: { memory: "4GB", disk: "10GB", cpu: "300%", databases: 2, allocations: 2, backups: 2, swap: 0, io: 500, description: "Untuk project lebih berat dan butuh backup." },
+  unlimited: { memory: "0", disk: "0", cpu: "0", databases: 5, allocations: 3, backups: 3, swap: 0, io: 500, description: "Resource unlimited sesuai aturan Pterodactyl." }
+};
+
+type PresetName = keyof typeof SERVER_PRESETS;
+
 async function main() {
   if (command === "help" || command === "--help" || command === "-h") {
     printHelp();
+    return;
+  }
+
+  if (command === "presets") {
+    const rows = formatPresetRows();
+    output(rows, table(rows, ["name", "memory", "disk", "cpu", "databases", "allocations", "backups", "description"]));
     return;
   }
 
@@ -300,6 +316,7 @@ function errorResult(error: unknown) {
 function buildCreateServerInput() {
   const username = getOption("--username");
   const password = getOption("--password");
+  const preset = getServerPreset(getOption("--preset") ?? "basic");
   return {
     name: getRequiredOption("--name"),
     email: getRequiredOption("--email"),
@@ -313,16 +330,34 @@ function buildCreateServerInput() {
     dockerImage: getOption("--docker-image") ?? "auto",
     startup: getOption("--startup") ?? "auto",
     specs: {
-      memory: getOption("--memory") ?? "1GB",
-      disk: getOption("--disk") ?? "2GB",
-      cpu: getOption("--cpu") ?? "100%",
-      databases: getNumberOption("--databases", 0),
-      allocations: getNumberOption("--allocations", 1),
-      backups: getNumberOption("--backups", 0),
-      swap: getNumberOption("--swap", 0),
-      io: getNumberOption("--io", 500)
+      memory: getOption("--memory") ?? preset.memory,
+      disk: getOption("--disk") ?? preset.disk,
+      cpu: getOption("--cpu") ?? preset.cpu,
+      databases: getNumberOption("--databases", preset.databases),
+      allocations: getNumberOption("--allocations", preset.allocations),
+      backups: getNumberOption("--backups", preset.backups),
+      swap: getNumberOption("--swap", preset.swap),
+      io: getNumberOption("--io", preset.io)
     }
   };
+}
+
+function getServerPreset(name: string) {
+  if (!(name in SERVER_PRESETS)) throw new Error(`Preset tidak dikenal: ${name}. Jalankan: ptero-gateway presets`);
+  return SERVER_PRESETS[name as PresetName];
+}
+
+function formatPresetRows() {
+  return Object.entries(SERVER_PRESETS).map(([name, preset]) => ({
+    name,
+    memory: preset.memory,
+    disk: preset.disk,
+    cpu: preset.cpu,
+    databases: String(preset.databases),
+    allocations: String(preset.allocations),
+    backups: String(preset.backups),
+    description: preset.description
+  }));
 }
 
 function buildLimitPayload(raw: unknown): Record<string, unknown> {
@@ -649,6 +684,7 @@ function printHelp() {
   console.log(`Akadev Pterodactyl Gateway
 
 Perintah:
+  ptero-gateway presets [--json]
   ptero-gateway doctor [--json]
   ptero-gateway connect [--json]
   ptero-gateway ids [--nest <nestId>] [--json]
@@ -656,8 +692,8 @@ Perintah:
   ptero-gateway admin users [--json]
   ptero-gateway admin servers [--json]
   ptero-gateway admin create-user --username aka_test --email user@example.com --password "secret" --yes
-  ptero-gateway admin create-server --name "aka test" --email user@example.com --node 1 --nest 5 --egg 18 --dry-run
-  ptero-gateway admin create-server --name "aka test" --email user@example.com --node 1 --nest 5 --egg 18 --yes
+  ptero-gateway admin create-server --name "aka test" --email user@example.com --node 1 --nest 5 --egg 18 --preset basic --dry-run
+  ptero-gateway admin create-server --name "aka test" --email user@example.com --node 1 --nest 5 --egg 18 --preset standard --yes
   ptero-gateway admin server <serverId> detail [--json]
   ptero-gateway admin server <serverId> limits [--json]
   ptero-gateway admin server <serverId> update-limits --backups 1 --yes
@@ -686,6 +722,10 @@ Perintah:
   ptero-gateway server <identifier> restart --yes
   ptero-gateway server <identifier> kill --yes
   ptero-gateway server <identifier> command "npm start" --yes
+
+Preset:
+  mini, basic, standard, premium, unlimited
+  Spek preset bisa dioverride dengan --memory, --disk, --cpu, --databases, --allocations, --backups.
 
 Env:
   PTERO_DOMAIN=https://panel.example.com
