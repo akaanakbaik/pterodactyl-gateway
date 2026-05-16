@@ -1,6 +1,6 @@
 {
   "name": "@akaanakbaik/pterodactyl-gateway",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "TypeScript SDK dan CLI untuk Pterodactyl Panel: create user/server, bot integration, dashboard automation, file manager, backups, schedules, dan server control.",
   "type": "module",
   "main": "./dist/index.js",
@@ -21,8 +21,7 @@
     "README.md",
     "BLUEPRINT.md",
     "add-promt.md",
-    "LICENSE",
-    "SECURITY.md"
+    "LICENSE"
   ],
   "sideEffects": false,
   "scripts": {
