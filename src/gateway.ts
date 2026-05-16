@@ -21,7 +21,7 @@ export class PteroGateway {
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
     this.timeout = config.timeout ?? 15000;
-    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/0.2.0";
+    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/0.2.1";
     this.safeMode = config.safeMode ?? true;
     this.presets = config.presets ?? {};
     this.http = new HttpCore({
@@ -284,6 +284,25 @@ export class PteroServerHandle {
         for (const [key, value] of Object.entries(values)) results[key] = await this.startup.set(key, value);
         return results;
       }
+    };
+  }
+
+  get network() {
+    return {
+      list: () => this.gateway.raw.client.get(`/servers/${this.identifier}/network/allocations`),
+      assign: () => this.gateway.raw.client.post(`/servers/${this.identifier}/network/allocations`),
+      setNote: (allocationId: number, note: string) => this.gateway.raw.client.post(`/servers/${this.identifier}/network/allocations/${allocationId}`, { notes: note }),
+      setPrimary: (allocationId: number) => this.gateway.raw.client.post(`/servers/${this.identifier}/network/allocations/${allocationId}/primary`),
+      delete: (allocationId: number) => this.gateway.raw.client.delete(`/servers/${this.identifier}/network/allocations/${allocationId}`)
+    };
+  }
+
+  get databases() {
+    return {
+      list: () => this.gateway.raw.client.get(`/servers/${this.identifier}/databases`),
+      create: (input: { database: string; remote?: string }) => this.gateway.raw.client.post(`/servers/${this.identifier}/databases`, { database: input.database, remote: input.remote ?? "%" }),
+      rotatePassword: (databaseId: string) => this.gateway.raw.client.post(`/servers/${this.identifier}/databases/${databaseId}/rotate-password`),
+      delete: (databaseId: string) => this.gateway.raw.client.delete(`/servers/${this.identifier}/databases/${databaseId}`)
     };
   }
 
