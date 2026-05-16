@@ -21,7 +21,7 @@ export class PteroGateway {
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
     this.timeout = config.timeout ?? 15000;
-    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/0.2.7";
+    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/1.0.0";
     this.safeMode = config.safeMode ?? true;
     this.presets = config.presets ?? {};
     this.http = new HttpCore({
@@ -371,7 +371,7 @@ export class PteroServerHandle {
   }
 
   command(command: string, options?: { allowDangerous?: boolean }) {
-    if (!options?.allowDangerous && isDangerousCommand(command)) throw new PteroError({ code: "DANGEROUS_COMMAND_BLOCKED", message: "Command terlihat berbahaya dan diblokir oleh safe mode.", hint: "Gunakan allowDangerous: true hanya jika benar-benar paham risikonya." });
+    if (this.gateway.safeMode && !options?.allowDangerous && isDangerousCommand(command)) throw new PteroError({ code: "DANGEROUS_COMMAND_BLOCKED", message: "Command terlihat berbahaya dan diblokir oleh safe mode.", hint: "Gunakan allowDangerous: true atau safeMode: false hanya jika benar-benar paham risikonya." });
     return this.gateway.raw.client.post(`/servers/${this.identifier}/command`, { command });
   }
 }
@@ -413,9 +413,13 @@ function mapTaskInput(input: { action?: string; payload?: string; timeOffset?: n
 }
 
 function isDangerousCommand(command: string): boolean {
-  const value = command.toLowerCase();
-  const destructiveRemove = ["r", "m", " ", "-", "r", "f", " ", "/"].join("");
-  const rawDiskWrite = ["d", "d", " ", "i", "f", "="].join("");
-  const forkPattern = [":", "(", ")", "{"].join("");
-  return [destructiveRemove, "mkfs", rawDiskWrite, "shutdown", "reboot", forkPattern].some(pattern => value.includes(pattern));
+  const value = command.toLowerCase().trim();
+  const patterns = [
+    /(^|[;&|`$()\s])rm\s+-[a-z]*r[a-z]*f[a-z]*\s+(\/|\/\*|~|~\/|\.\.)(\s|$)/,
+    /(^|[;&|`$()\s])mkfs(\.|\s|$)/,
+    /(^|[;&|`$()\s])dd\s+.*\bof=\/(dev|boot|etc|usr|var|home|root)\b/,
+    /(^|[;&|`$()\s])(shutdown|poweroff|halt|reboot)(\s|$)/,
+    /:\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*}\s*;/
+  ];
+  return patterns.some(pattern => pattern.test(value));
 }
