@@ -2,15 +2,15 @@
 
 SDK TypeScript dan CLI sederhana untuk membantu project Node.js terhubung ke Pterodactyl Panel dengan lebih mudah.
 
-Package ini dibuat untuk kebutuhan bot reseller panel, dashboard custom, automation server, dan admin tools. Fokus awal v0.1.x adalah koneksi, validasi, smart create user, smart create server, preview, dry run, error tutorial, raw request, kontrol dasar server, test hardening, dan pack check.
+Package ini dibuat untuk kebutuhan bot reseller panel, dashboard custom, automation server, dan admin tools. Fokus v0.2.0 adalah memperluas kontrol server dengan file manager dan startup variables, sambil tetap menjaga smart create user/server, preview, dry run, error tutorial, raw request, test, dan pack check.
 
 Package ini bukan package resmi dari Pterodactyl dan tidak berafiliasi dengan Pterodactyl Software.
 
 ## Status
 
-Versi saat ini: `0.1.1`
+Versi saat ini: `0.2.0`
 
-Fitur target v0.1.x:
+Fitur utama:
 
 - `createPtero()`
 - `createPtero.fromEnv()`
@@ -31,6 +31,19 @@ Fitur target v0.1.x:
 - `server(identifier).kill()`
 - `server(identifier).command()`
 - `server(identifier).resources()`
+- `server(identifier).files.list()`
+- `server(identifier).files.read()`
+- `server(identifier).files.write()`
+- `server(identifier).files.delete()`
+- `server(identifier).files.mkdir()`
+- `server(identifier).files.rename()`
+- `server(identifier).files.compress()`
+- `server(identifier).files.decompress()`
+- `server(identifier).files.json.read()`
+- `server(identifier).files.json.write()`
+- `server(identifier).startup.variables()`
+- `server(identifier).startup.set()`
+- `server(identifier).startup.setMany()`
 - parser RAM, disk, CPU
 - error tutorial
 - CLI dasar `ptero-gateway`
@@ -66,7 +79,7 @@ Penjelasan:
 
 - `PTERO_DOMAIN` adalah domain panel Pterodactyl.
 - `PTERO_PTLA` adalah Application API Key untuk aksi admin seperti create user dan create server.
-- `PTERO_PTLC` adalah Client API Key untuk kontrol server seperti start, stop, command, resources, file manager, dan realtime pada versi berikutnya.
+- `PTERO_PTLC` adalah Client API Key untuk kontrol server seperti start, stop, command, resources, file manager, startup variables, dan realtime pada versi berikutnya.
 
 ## Koneksi cepat
 
@@ -192,6 +205,35 @@ const preview = await ptero.servers.previewCreate({
 console.log(preview.payload);
 ```
 
+## File manager
+
+```ts
+const server = ptero.server("abc12345");
+
+const files = await server.files.list("/");
+const text = await server.files.read("/package.json");
+await server.files.write("/index.js", "console.log('halo')");
+await server.files.mkdir("/", "logs");
+await server.files.rename("/", [{ from: "old.js", to: "new.js" }]);
+await server.files.delete("/", ["old.js"]);
+await server.files.compress("/", ["src", "package.json"]);
+await server.files.decompress("/", "archive.tar.gz");
+
+const config = await server.files.json.read("/config.json");
+await server.files.json.write("/config.json", { ok: true });
+```
+
+## Startup variables
+
+```ts
+const variables = await server.startup.variables();
+await server.startup.set("BOT_TOKEN", "token-baru");
+await server.startup.setMany({
+  NODE_ENV: "production",
+  STARTUP_FILE: "index.js"
+});
+```
+
 ## Dry run
 
 `dryRun` membuat payload final tanpa mengirim request create server.
@@ -309,9 +351,9 @@ Jika semua berhasil, package siap dilanjutkan ke fitur versi berikutnya.
 
 Core SDK, smart create user, smart create server, preview, dryRun, doctor dasar, CLI dasar, raw request, test, CI, pack check.
 
-### v0.2.0
+### v0.2.x
 
-File manager, database manager, backup manager, startup variables, network allocations, schedules, cache, pagination, preset lebih matang.
+File manager, startup variables, database manager, backup manager, network allocations, schedules, cache, pagination, preset lebih matang.
 
 ### v0.3.0
 
