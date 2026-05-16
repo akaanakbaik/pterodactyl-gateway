@@ -201,6 +201,23 @@ test("schedule helper memakai endpoint benar", async () => {
   assert.equal(calls[8].method, "DELETE");
 });
 
+test("probe menjalankan semua endpoint read-only", async () => {
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method ?? "GET" });
+    return json({ ok: true });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  const report = await ptero.server("abc123").probe();
+
+  assert.equal(report.ok, true);
+  assert.equal(Object.keys(report.checks).length, 7);
+  assert.equal(calls.every(call => call.method === "GET"), true);
+  assert.match(calls.map(call => call.url).join("\n"), /resources/);
+  assert.match(calls.map(call => call.url).join("\n"), /backups/);
+  assert.match(calls.map(call => call.url).join("\n"), /schedules/);
+});
+
 test("createSmart dryRun membangun payload otomatis", async () => {
   const fetcher = async (url) => {
     const target = String(url);
