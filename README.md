@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://web-docs-pterodacty-gateway.vercel.app"><b>Web Docs</b></a>
+  <a href="https://pterodacty-gateway.akadev.me"><b>Web Docs</b></a>
   ·
   <a href="https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway"><b>npm</b></a>
   ·
