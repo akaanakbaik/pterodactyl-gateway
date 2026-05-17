@@ -60,7 +60,7 @@ Fitur web docs:
 
 - [Install](#install)
 - [Quick start CLI](#quick-start-cli)
-- [Quick start SDK](#quick-start-sdk)
+- [SDK usage](#sdk-usage)
 - [Environment](#environment)
 - [CLI reference](#cli-reference)
 - [Preset dan template](#preset-dan-template)
@@ -138,7 +138,7 @@ ptero-gateway admin create-server \
   --yes
 ```
 
-## Quick start SDK
+## SDK usage
 
 ```ts
 import { createPtero } from "@akaanakbaik/pterodactyl-gateway";
