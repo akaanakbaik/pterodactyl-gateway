@@ -25,7 +25,7 @@ Akadev Pterodactyl Gateway membantu kamu menghubungkan aplikasi Node.js ke Ptero
 Dokumentasi lengkap versi web tersedia di:
 
 ```txt
-https://web-docs-pterodacty-gateway.vercel.app
+https://pterodacty-gateway.akadev.me
 ```
 
 Web docs berisi tutorial per halaman/path agar mudah dipahami pemula:
