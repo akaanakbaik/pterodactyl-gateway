@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <code>@akaanakbaik/pterodactyl-gateway</code> · <code>v1.0.1</code> · <code>Node.js &gt;=18</code> · <code>MIT</code>
+  <code>@akaanakbaik/pterodactyl-gateway</code> · <code>v1.0.2</code> · <code>Node.js &gt;=18</code> · <code>MIT</code>
 </p>
 
 <p align="center">
@@ -434,8 +434,8 @@ Checklist publish:
 ```bash
 npm run verify
 npm publish --access public
-npm view @akaanakbaik/pterodactyl-gateway@1.0.1 version --prefer-online --registry=https://registry.npmjs.org/
-npm i -g @akaanakbaik/pterodactyl-gateway@1.0.1 --force --prefer-online --registry=https://registry.npmjs.org/
+npm view @akaanakbaik/pterodactyl-gateway@1.0.2 version --prefer-online --registry=https://registry.npmjs.org/
+npm i -g @akaanakbaik/pterodactyl-gateway@1.0.2 --force --prefer-online --registry=https://registry.npmjs.org/
 ptero-gateway self-check
 ptero-gateway release-check
 ptero-gateway doctor
@@ -443,7 +443,7 @@ ptero-gateway doctor
 
 ## Versi npm lama
 
-Rilis utama yang direkomendasikan adalah `1.0.1` atau `latest`. Versi lama tidak dipromosikan lagi di dokumentasi.
+Rilis utama yang direkomendasikan adalah `1.0.2` atau `latest`. Versi lama tidak dipromosikan lagi di dokumentasi.
 
 Contoh deprecate versi lama:
 
