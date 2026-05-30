@@ -1,8 +1,24 @@
 import { PteroError } from "./errors.js";
 import { HttpCore } from "./http.js";
 import { buildServerPayload, buildUserPayload, normalizeSpecs, normalizeUserResponse, progress, selectAllocations, validateCreateInput } from "./smart.js";
-import { ConnectResult, CreateSmartServerInput, CreateUserSmartInput, DoctorReport, NormalizedServer, OperationOptions, PreviewCreateServer, PteroConfig, PteroMode, ServerPowerSignal } from "./types.js";
+import {
+  ConnectResult,
+  CreateSmartServerInput,
+  CreateUserSmartInput,
+  DoctorReport,
+  NormalizedServer,
+  OperationOptions,
+  PreviewCreateServer,
+  PteroConfig,
+  PteroMode,
+  ServerPowerSignal,
+  PteroAppUser,
+  PteroAppNode,
+  PteroAppServer,
+  PteroClientServer
+} from "./types.js";
 import { asObject, getCollection, getDataAttributes, maskSecret, normalizeDomain } from "./utils.js";
+import { PteroWebSocket } from "./websocket.js";
 
 export class PteroGateway {
   readonly domain: string;
@@ -21,7 +37,7 @@ export class PteroGateway {
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
     this.timeout = config.timeout ?? 15000;
-    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/1.0.0";
+    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/1.1.0";
     this.safeMode = config.safeMode ?? true;
     this.presets = config.presets ?? {};
     this.http = new HttpCore({
@@ -42,40 +58,78 @@ export class PteroGateway {
     });
   }
 
-  get raw() {
+  get application() {
     return {
-      application: {
-        get: <T = unknown>(path: string) => this.request<T>({ api: "application", path }),
-        post: <T = unknown>(path: string, body?: unknown) => this.request<T>({ api: "application", method: "POST", path, body }),
-        patch: <T = unknown>(path: string, body?: unknown) => this.request<T>({ api: "application", method: "PATCH", path, body }),
-        delete: <T = unknown>(path: string) => this.request<T>({ api: "application", method: "DELETE", path })
+      users: {
+        list: (page = 1) => this.request<any>({ api: "application", path: `/users?page=${page}` }),
+        get: (id: number) => this.request<any>({ api: "application", path: `/users/${id}` }),
+        create: (data: any) => this.request<any>({ api: "application", method: "POST", path: "/users", body: data }),
+        update: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/users/${id}`, body: data }),
+        delete: (id: number) => this.request<any>({ api: "application", method: "DELETE", path: `/users/${id}` })
       },
-      client: {
-        get: <T = unknown>(path: string) => this.request<T>({ api: "client", path }),
-        getText: (path: string) => this.request<string>({ api: "client", path, responseType: "text" }),
-        post: <T = unknown>(path: string, body?: unknown) => this.request<T>({ api: "client", method: "POST", path, body }),
-        postText: <T = unknown>(path: string, body: string) => this.request<T>({ api: "client", method: "POST", path, body, contentType: "text" }),
-        put: <T = unknown>(path: string, body?: unknown) => this.request<T>({ api: "client", method: "PUT", path, body }),
-        putText: <T = unknown>(path: string, body: string) => this.request<T>({ api: "client", method: "PUT", path, body, contentType: "text" }),
-        delete: <T = unknown>(path: string) => this.request<T>({ api: "client", method: "DELETE", path })
+      nodes: {
+        list: (page = 1) => this.request<any>({ api: "application", path: `/nodes?page=${page}` }),
+        get: (id: number) => this.request<any>({ api: "application", path: `/nodes/${id}` }),
+        config: (id: number) => this.request<any>({ api: "application", path: `/nodes/${id}/configuration` }),
+        allocations: {
+          list: (nodeId: number, page = 1) => this.request<any>({ api: "application", path: `/nodes/${nodeId}/allocations?page=${page}` }),
+          create: (nodeId: number, data: any) => this.request<any>({ api: "application", method: "POST", path: `/nodes/${nodeId}/allocations`, body: data }),
+          delete: (nodeId: number, id: number) => this.request<any>({ api: "application", method: "DELETE", path: `/nodes/${nodeId}/allocations/${id}` })
+        }
+      },
+      servers: {
+        list: (page = 1) => this.request<any>({ api: "application", path: `/servers?page=${page}` }),
+        get: (id: number) => this.request<any>({ api: "application", path: `/servers/${id}` }),
+        create: (data: any) => this.request<any>({ api: "application", method: "POST", path: "/servers", body: data }),
+        suspend: (id: number) => this.request<any>({ api: "application", method: "POST", path: `/servers/${id}/suspend` }),
+        unsuspend: (id: number) => this.request<any>({ api: "application", method: "POST", path: `/servers/${id}/unsuspend` }),
+        reinstall: (id: number) => this.request<any>({ api: "application", method: "POST", path: `/servers/${id}/reinstall` }),
+        delete: (id: number, force = false) => this.request<any>({ api: "application", method: "DELETE", path: `/servers/${id}${force ? "/force" : ""}` })
+      },
+      locations: {
+        list: (page = 1) => this.request<any>({ api: "application", path: `/locations?page=${page}` }),
+        get: (id: number) => this.request<any>({ api: "application", path: `/locations/${id}` })
+      },
+      nests: {
+        list: (page = 1) => this.request<any>({ api: "application", path: `/nests?page=${page}` }),
+        get: (id: number) => this.request<any>({ api: "application", path: `/nests/${id}` }),
+        eggs: {
+          list: (nestId: number) => this.request<any>({ api: "application", path: `/nests/${nestId}/eggs` }),
+          get: (nestId: number, eggId: number) => this.request<any>({ api: "application", path: `/nests/${nestId}/eggs/${eggId}?include=variables` })
+        }
       }
     };
   }
 
-  get users() {
+  get client() {
     return {
-      createSmart: (input: CreateUserSmartInput, options?: OperationOptions) => this.createUserSmart(input, options),
-      getOrCreate: (input: CreateUserSmartInput, options?: OperationOptions) => this.getOrCreateUser(input, options),
-      findByEmail: (email: string) => this.findUserByEmail(email)
+      account: {
+        get: () => this.request<any>({ api: "client", path: "/account" }),
+        2fa: () => this.request<any>({ api: "client", path: "/account/two-factor" }),
+        apiKeys: {
+          list: () => this.request<any>({ api: "client", path: "/account/api-keys" }),
+          create: (description: string, allowedIps: string[] = []) => this.request<any>({ api: "client", method: "POST", path: "/account/api-keys", body: { description, allowed_ips: allowedIps } }),
+          delete: (identifier: string) => this.request<any>({ api: "client", method: "DELETE", path: `/account/api-keys/${identifier}` })
+        }
+      },
+      servers: {
+        list: (page = 1) => this.request<any>({ api: "client", path: `/api/client?page=${page}` })
+      }
     };
   }
 
-  get servers() {
+  get smart() {
     return {
-      previewCreate: (input: CreateSmartServerInput, options?: OperationOptions) => this.previewCreateServer(input, options),
-      createSmart: (input: CreateSmartServerInput, options?: OperationOptions) => this.createServerSmart(input, options),
-      createFromPreset: (preset: string, input: Omit<CreateSmartServerInput, "preset" | "specs">, options?: OperationOptions) => this.createServerSmart({ ...input, preset }, options),
-      createRaw: (payload: Record<string, unknown>) => this.raw.application.post("/servers", payload)
+      users: {
+        create: (input: CreateUserSmartInput, options?: OperationOptions) => this.createUserSmart(input, options),
+        getOrCreate: (input: CreateUserSmartInput, options?: OperationOptions) => this.getOrCreateUser(input, options),
+        findByEmail: (email: string) => this.findUserByEmail(email)
+      },
+      servers: {
+        preview: (input: CreateSmartServerInput, options?: OperationOptions) => this.previewCreateServer(input, options),
+        create: (input: CreateSmartServerInput, options?: OperationOptions) => this.createServerSmart(input, options),
+        createFromPreset: (preset: string, input: Omit<CreateSmartServerInput, "preset" | "specs">, options?: OperationOptions) => this.createServerSmart({ ...input, preset }, options)
+      }
     };
   }
 
@@ -111,24 +165,12 @@ export class PteroGateway {
     return { ok: checks.every(check => check.ok || check.name.endsWith("provided")), mode: connect.mode, checks };
   }
 
-  async compatibility() {
-    const connect = await this.connect();
-    return { applicationApi: connect.application.valid, clientApi: connect.client.valid, websocket: connect.client.valid, fileUpload: connect.client.valid, schedules: connect.client.valid, eggCreateEndpoint: false, nestCreateEndpoint: false };
-  }
-
-  async listIds(nestId?: number) {
-    const nodes = await this.raw.application.get("/nodes?per_page=100").catch(() => undefined);
-    const nests = await this.raw.application.get("/nests?per_page=100").catch(() => undefined);
-    const eggs = nestId ? await this.raw.application.get(`/nests/${nestId}/eggs?per_page=100`).catch(() => undefined) : undefined;
-    return { nodes, nests, eggs };
-  }
-
   private async createUserSmart(input: CreateUserSmartInput, options?: OperationOptions) {
     progress(options, "validate", 10, "Memvalidasi user.");
     const built = buildUserPayload(input);
     if (options?.dryRun) return { dryRun: true, payload: built.payload, generatedPassword: built.generatedPassword };
     progress(options, "request", 70, "Membuat user di Pterodactyl.");
-    const raw = await this.raw.application.post("/users", built.payload);
+    const raw = await this.application.users.create(built.payload);
     progress(options, "done", 100, "User berhasil dibuat.");
     return normalizeUserResponse(raw, built.generatedPassword);
   }
@@ -141,7 +183,7 @@ export class PteroGateway {
   }
 
   private async findUserByEmail(email: string) {
-    const raw = await this.raw.application.get(`/users?filter[email]=${encodeURIComponent(email)}`).catch(() => undefined);
+    const raw = await this.request<any>({ api: "application", path: `/users?filter[email]=${encodeURIComponent(email)}` }).catch(() => undefined);
     const data = Array.isArray(asObject(raw).data) ? asObject(raw).data as unknown[] : [];
     const first = data[0];
     if (!first) return undefined;
@@ -168,13 +210,13 @@ export class PteroGateway {
     progress(options, "user", 15, "Menyinkronkan user.");
     const user = await this.resolveUserForServer(input);
     progress(options, "node", 30, "Mengambil data node.");
-    const rawNode = await this.raw.application.get(`/nodes/${input.nodeId}`);
+    const rawNode = await this.application.nodes.get(input.nodeId);
     progress(options, "egg", 45, "Mengambil data nest dan egg.");
-    const rawNest = await this.raw.application.get(`/nests/${input.nestId}`);
-    const rawEgg = await this.raw.application.get(`/nests/${input.nestId}/eggs/${input.eggId}?include=variables`);
+    const rawNest = await this.application.nests.get(input.nestId);
+    const rawEgg = await this.application.nests.eggs.get(input.nestId, input.eggId);
     progress(options, "allocation", 60, "Mencari allocation kosong.");
     const allocationCount = specs.featureLimits.allocations || 1;
-    const rawAllocations = await this.raw.application.get(`/nodes/${input.nodeId}/allocations?per_page=100`);
+    const rawAllocations = await this.application.nodes.allocations.list(input.nodeId);
     let allocation;
     try {
       allocation = selectAllocations(rawAllocations, allocationCount, input.allocation ?? "auto");
@@ -192,7 +234,7 @@ export class PteroGateway {
       user,
       node: { id: input.nodeId, name: typeof nodeAttr.name === "string" ? nodeAttr.name : undefined, raw: rawNode },
       nest: { id: input.nestId, name: typeof nestAttr.name === "string" ? nestAttr.name : undefined, raw: rawNest },
-      egg: { id: input.eggId, name: typeof eggAttr.name === "string" ? eggAttr.name : undefined, raw: rawEgg },
+      egg: { id: input.eggId, name: typeof eggAttr.name === "string" ? eggAttr.egg_name ?? eggAttr.name : undefined, raw: rawEgg },
       dockerImage: String(payload.docker_image),
       startup: String(payload.startup),
       environment: payload.environment as Record<string, string>,
@@ -209,7 +251,7 @@ export class PteroGateway {
     const preview = await this.previewCreateServer(input, options);
     if (options?.dryRun) return { dryRun: true, preview, payload: preview.payload };
     progress(options, "request", 90, "Membuat server di Pterodactyl.");
-    const raw = await this.raw.application.post("/servers", preview.payload);
+    const raw = await this.application.servers.create(preview.payload);
     progress(options, "done", 100, "Server berhasil dibuat.");
     const attributes = getDataAttributes(raw);
     return { id: typeof attributes.id === "number" ? attributes.id : Number(attributes.id ?? 0) || undefined, identifier: typeof attributes.identifier === "string" ? attributes.identifier : undefined, uuid: typeof attributes.uuid === "string" ? attributes.uuid : undefined, name: typeof attributes.name === "string" ? attributes.name : undefined, raw };
@@ -218,7 +260,7 @@ export class PteroGateway {
   private async checkApplicationKey() {
     if (!this.applicationKey) return { provided: false, valid: false, message: "PTLA kosong." };
     try {
-      await this.raw.application.get("/users?per_page=1");
+      await this.application.users.list();
       return { provided: true, valid: true, message: "PTLA valid." };
     } catch (error) {
       return { provided: true, valid: false, message: error instanceof Error ? error.message : "PTLA tidak valid." };
@@ -228,7 +270,7 @@ export class PteroGateway {
   private async checkClientKey() {
     if (!this.clientKey) return { provided: false, valid: false, message: "PTLC kosong." };
     try {
-      await this.raw.client.get("/account");
+      await this.client.account.get();
       return { provided: true, valid: true, message: "PTLC valid." };
     } catch (error) {
       return { provided: true, valid: false, message: error instanceof Error ? error.message : "PTLC tidak valid." };
@@ -255,171 +297,76 @@ export class PteroServerHandle {
 
   get files() {
     return {
-      list: (directory = "/") => this.gateway.raw.client.get(`/servers/${this.identifier}/files/list?directory=${encodeURIComponent(directory)}`),
-      read: (file: string) => this.gateway.raw.client.getText(`/servers/${this.identifier}/files/contents?file=${encodeURIComponent(file)}`),
-      write: (file: string, content: string) => this.gateway.raw.client.postText(`/servers/${this.identifier}/files/write?file=${encodeURIComponent(file)}`, content),
-      delete: (root: string, files: string[]) => this.gateway.raw.client.post(`/servers/${this.identifier}/files/delete`, { root, files }),
-      mkdir: (root: string, name: string) => this.gateway.raw.client.post(`/servers/${this.identifier}/files/create-folder`, { root, name }),
-      rename: (root: string, files: Array<{ from: string; to: string }>) => this.gateway.raw.client.put(`/servers/${this.identifier}/files/rename`, { root, files }),
-      compress: (root: string, files: string[]) => this.gateway.raw.client.post(`/servers/${this.identifier}/files/compress`, { root, files }),
-      decompress: (root: string, file: string) => this.gateway.raw.client.post(`/servers/${this.identifier}/files/decompress`, { root, file }),
+      list: (directory = "/") => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/files/list?directory=${encodeURIComponent(directory)}` }),
+      read: (file: string) => this.gateway.request<string>({ api: "client", path: `/servers/${this.identifier}/files/contents?file=${encodeURIComponent(file)}`, responseType: "text" }),
+      write: (file: string, content: string) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/files/write?file=${encodeURIComponent(file)}`, body: content, contentType: "text" }),
+      delete: (root: string, files: string[]) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/files/delete`, body: { root, files } }),
+      mkdir: (root: string, name: string) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/files/create-folder`, body: { root, name } }),
+      rename: (root: string, files: Array<{ from: string; to: string }>) => this.gateway.request<any>({ api: "client", method: "PUT", path: `/servers/${this.identifier}/files/rename`, body: { root, files } }),
+      compress: (root: string, files: string[]) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/files/compress`, body: { root, files } }),
+      decompress: (root: string, file: string) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/files/decompress`, body: { root, file } }),
+      download: (file: string) => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/files/pull?file=${encodeURIComponent(file)}` }),
       json: {
-        read: async <T = unknown>(file: string) => JSON.parse(await this.gateway.raw.client.getText(`/servers/${this.identifier}/files/contents?file=${encodeURIComponent(file)}`)) as T,
-        write: (file: string, data: unknown, space = 2) => this.gateway.raw.client.postText(`/servers/${this.identifier}/files/write?file=${encodeURIComponent(file)}`, JSON.stringify(data, null, space))
+        read: async <T = unknown>(file: string) => JSON.parse(await this.files.read(file)) as T,
+        write: (file: string, data: unknown, space = 2) => this.files.write(file, JSON.stringify(data, null, space))
       }
     };
   }
 
   get startup() {
     return {
-      variables: () => this.gateway.raw.client.get(`/servers/${this.identifier}/startup`),
+      get: () => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/startup` }),
       set: async (env: string, value: string | number | boolean) => {
-        const raw = await this.gateway.raw.client.get(`/servers/${this.identifier}/startup`);
-        const relationships = asObject(getDataAttributes(raw).relationships);
-        const variables = [...getCollection(raw), ...getCollection(relationships.variables)];
-        const variable = variables.find(item => String(asObject(item.attributes ?? item).env_variable) === env);
-        if (!variable) throw new PteroError({ code: "STARTUP_VARIABLE_NOT_FOUND", message: `Variable ${env} tidak ditemukan.`, hint: "Cek daftar startup variables pada egg/server." });
-        return this.gateway.raw.client.put(`/servers/${this.identifier}/startup/variable`, { key: String(env), value: String(value) });
-      },
-      setMany: async (values: Record<string, string | number | boolean>) => {
-        const results: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(values)) results[key] = await this.startup.set(key, value);
-        return results;
+        return this.gateway.request<any>({ api: "client", method: "PUT", path: `/servers/${this.identifier}/startup/variable`, body: { key: String(env), value: String(value) } });
       }
     };
   }
 
   get network() {
     return {
-      list: () => this.gateway.raw.client.get(`/servers/${this.identifier}/network/allocations`),
-      assign: () => this.gateway.raw.client.post(`/servers/${this.identifier}/network/allocations`),
-      setNote: (allocationId: number, note: string) => this.gateway.raw.client.post(`/servers/${this.identifier}/network/allocations/${allocationId}`, { notes: note }),
-      setPrimary: (allocationId: number) => this.gateway.raw.client.post(`/servers/${this.identifier}/network/allocations/${allocationId}/primary`),
-      delete: (allocationId: number) => this.gateway.raw.client.delete(`/servers/${this.identifier}/network/allocations/${allocationId}`)
+      list: () => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/network/allocations` }),
+      assign: () => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/network/allocations` }),
+      setNote: (allocationId: number, note: string) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/network/allocations/${allocationId}`, body: { notes: note } }),
+      setPrimary: (allocationId: number) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/network/allocations/${allocationId}/primary` }),
+      delete: (allocationId: number) => this.gateway.request<any>({ api: "client", method: "DELETE", path: `/servers/${this.identifier}/network/allocations/${allocationId}` })
     };
   }
 
   get databases() {
     return {
-      list: () => this.gateway.raw.client.get(`/servers/${this.identifier}/databases`),
-      create: (input: { database: string; remote?: string }) => this.gateway.raw.client.post(`/servers/${this.identifier}/databases`, { database: input.database, remote: input.remote ?? "%" }),
-      rotatePassword: (databaseId: string) => this.gateway.raw.client.post(`/servers/${this.identifier}/databases/${databaseId}/rotate-password`),
-      delete: (databaseId: string) => this.gateway.raw.client.delete(`/servers/${this.identifier}/databases/${databaseId}`)
+      list: () => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/databases` }),
+      create: (database: string, remote = "%") => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/databases`, body: { database, remote } }),
+      rotatePassword: (databaseId: string) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/databases/${databaseId}/rotate-password` }),
+      delete: (databaseId: string) => this.gateway.request<any>({ api: "client", method: "DELETE", path: `/servers/${this.identifier}/databases/${databaseId}` })
     };
   }
 
   get backups() {
     return {
-      list: () => this.gateway.raw.client.get(`/servers/${this.identifier}/backups`),
-      create: (input: { name?: string; ignored?: string[] | string; isLocked?: boolean } = {}) => this.gateway.raw.client.post(`/servers/${this.identifier}/backups`, { name: input.name, ignored: normalizeIgnored(input.ignored), is_locked: input.isLocked ?? false }),
-      details: (backupId: string) => this.gateway.raw.client.get(`/servers/${this.identifier}/backups/${backupId}`),
-      download: (backupId: string) => this.gateway.raw.client.get(`/servers/${this.identifier}/backups/${backupId}/download`),
-      delete: (backupId: string) => this.gateway.raw.client.delete(`/servers/${this.identifier}/backups/${backupId}`)
+      list: () => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/backups` }),
+      create: (name?: string, ignored?: string[] | string, isLocked = false) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/backups`, body: { name, ignored: Array.isArray(ignored) ? ignored.join("\n") : ignored, is_locked: isLocked } }),
+      get: (backupId: string) => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/backups/${backupId}` }),
+      download: (backupId: string) => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/backups/${backupId}/download` }),
+      delete: (backupId: string) => this.gateway.request<any>({ api: "client", method: "DELETE", path: `/servers/${this.identifier}/backups/${backupId}` })
     };
   }
 
-  get schedules() {
+  get websocket() {
     return {
-      list: () => this.gateway.raw.client.get(`/servers/${this.identifier}/schedules`),
-      create: (input: { name: string; minute: string; hour: string; dayOfMonth: string; month: string; dayOfWeek: string; isActive?: boolean; onlyWhenOnline?: boolean }) => this.gateway.raw.client.post(`/servers/${this.identifier}/schedules`, { name: input.name, minute: input.minute, hour: input.hour, day_of_month: input.dayOfMonth, month: input.month, day_of_week: input.dayOfWeek, is_active: input.isActive ?? true, only_when_online: input.onlyWhenOnline ?? false }),
-      details: (scheduleId: number) => this.gateway.raw.client.get(`/servers/${this.identifier}/schedules/${scheduleId}`),
-      update: (scheduleId: number, input: { name?: string; minute?: string; hour?: string; dayOfMonth?: string; month?: string; dayOfWeek?: string; isActive?: boolean; onlyWhenOnline?: boolean }) => this.gateway.raw.client.post(`/servers/${this.identifier}/schedules/${scheduleId}`, mapScheduleInput(input)),
-      run: (scheduleId: number) => this.gateway.raw.client.post(`/servers/${this.identifier}/schedules/${scheduleId}/execute`),
-      delete: (scheduleId: number) => this.gateway.raw.client.delete(`/servers/${this.identifier}/schedules/${scheduleId}`),
-      tasks: {
-        create: (scheduleId: number, input: { action: string; payload: string; timeOffset?: number; continueOnFailure?: boolean }) => this.gateway.raw.client.post(`/servers/${this.identifier}/schedules/${scheduleId}/tasks`, { action: input.action, payload: input.payload, time_offset: input.timeOffset ?? 0, continue_on_failure: input.continueOnFailure ?? false }),
-        update: (scheduleId: number, taskId: number, input: { action?: string; payload?: string; timeOffset?: number; continueOnFailure?: boolean }) => this.gateway.raw.client.post(`/servers/${this.identifier}/schedules/${scheduleId}/tasks/${taskId}`, mapTaskInput(input)),
-        delete: (scheduleId: number, taskId: number) => this.gateway.raw.client.delete(`/servers/${this.identifier}/schedules/${scheduleId}/tasks/${taskId}`)
-      }
+      auth: () => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/websocket` }),
+      create: () => new PteroWebSocket(this.gateway, this.identifier)
     };
-  }
-
-  async probe() {
-    const checks: Record<string, { ok: boolean; message: string }> = {};
-    await probeStep(checks, "resources", () => this.resources());
-    await probeStep(checks, "files.list", () => this.files.list("/"));
-    await probeStep(checks, "startup.variables", () => this.startup.variables());
-    await probeStep(checks, "network.list", () => this.network.list());
-    await probeStep(checks, "databases.list", () => this.databases.list());
-    await probeStep(checks, "backups.list", () => this.backups.list());
-    await probeStep(checks, "schedules.list", () => this.schedules.list());
-    return { ok: Object.values(checks).every(check => check.ok), identifier: this.identifier, checks };
   }
 
   resources() {
-    return this.gateway.raw.client.get(`/servers/${this.identifier}/resources`);
+    return this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/resources` });
   }
 
   power(signal: ServerPowerSignal) {
-    return this.gateway.raw.client.post(`/servers/${this.identifier}/power`, { signal });
+    return this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/power`, body: { signal } });
   }
 
-  start() {
-    return this.power("start");
+  command(command: string) {
+    return this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/command`, body: { command } });
   }
-
-  stop() {
-    return this.power("stop");
-  }
-
-  restart() {
-    return this.power("restart");
-  }
-
-  kill() {
-    return this.power("kill");
-  }
-
-  command(command: string, options?: { allowDangerous?: boolean }) {
-    if (this.gateway.safeMode && !options?.allowDangerous && isDangerousCommand(command)) throw new PteroError({ code: "DANGEROUS_COMMAND_BLOCKED", message: "Command terlihat berbahaya dan diblokir oleh safe mode.", hint: "Gunakan allowDangerous: true atau safeMode: false hanya jika benar-benar paham risikonya." });
-    return this.gateway.raw.client.post(`/servers/${this.identifier}/command`, { command });
-  }
-}
-
-async function probeStep(checks: Record<string, { ok: boolean; message: string }>, name: string, run: () => Promise<unknown>): Promise<void> {
-  try {
-    await run();
-    checks[name] = { ok: true, message: "OK" };
-  } catch (error) {
-    checks[name] = { ok: false, message: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-function normalizeIgnored(value: string[] | string | undefined): string {
-  if (Array.isArray(value)) return value.join("\n");
-  return value ?? "";
-}
-
-function mapScheduleInput(input: { name?: string; minute?: string; hour?: string; dayOfMonth?: string; month?: string; dayOfWeek?: string; isActive?: boolean; onlyWhenOnline?: boolean }): Record<string, unknown> {
-  const output: Record<string, unknown> = {};
-  if (input.name !== undefined) output.name = input.name;
-  if (input.minute !== undefined) output.minute = input.minute;
-  if (input.hour !== undefined) output.hour = input.hour;
-  if (input.dayOfMonth !== undefined) output.day_of_month = input.dayOfMonth;
-  if (input.month !== undefined) output.month = input.month;
-  if (input.dayOfWeek !== undefined) output.day_of_week = input.dayOfWeek;
-  if (input.isActive !== undefined) output.is_active = input.isActive;
-  if (input.onlyWhenOnline !== undefined) output.only_when_online = input.onlyWhenOnline;
-  return output;
-}
-
-function mapTaskInput(input: { action?: string; payload?: string; timeOffset?: number; continueOnFailure?: boolean }): Record<string, unknown> {
-  const output: Record<string, unknown> = {};
-  if (input.action !== undefined) output.action = input.action;
-  if (input.payload !== undefined) output.payload = input.payload;
-  if (input.timeOffset !== undefined) output.time_offset = input.timeOffset;
-  if (input.continueOnFailure !== undefined) output.continue_on_failure = input.continueOnFailure;
-  return output;
-}
-
-function isDangerousCommand(command: string): boolean {
-  const value = command.toLowerCase().trim();
-  const patterns = [
-    /(^|[;&|`$()\s])rm\s+-[a-z]*r[a-z]*f[a-z]*\s+(\/|\/\*|~|~\/|\.\.)(\s|$)/,
-    /(^|[;&|`$()\s])mkfs(\.|\s|$)/,
-    /(^|[;&|`$()\s])dd\s+.*\bof=\/(dev|boot|etc|usr|var|home|root)\b/,
-    /(^|[;&|`$()\s])(shutdown|poweroff|halt|reboot)(\s|$)/,
-    /:\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*}\s*;/
-  ];
-  return patterns.some(pattern => pattern.test(value));
 }
