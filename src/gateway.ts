@@ -105,7 +105,7 @@ export class PteroGateway {
     return {
       account: {
         get: () => this.request<any>({ api: "client", path: "/account" }),
-        2fa: () => this.request<any>({ api: "client", path: "/account/two-factor" }),
+        "2fa": () => this.request<any>({ api: "client", path: "/account/two-factor" }),
         apiKeys: {
           list: () => this.request<any>({ api: "client", path: "/account/api-keys" }),
           create: (description: string, allowedIps: string[] = []) => this.request<any>({ api: "client", method: "POST", path: "/account/api-keys", body: { description, allowed_ips: allowedIps } }),
@@ -133,8 +133,55 @@ export class PteroGateway {
     };
   }
 
+  get users() {
+    return {
+      createSmart: (input: CreateUserSmartInput, options?: OperationOptions) => this.createUserSmart(input, options),
+      getOrCreate: (input: CreateUserSmartInput, options?: OperationOptions) => this.getOrCreateUser(input, options),
+      findByEmail: (email: string) => this.findUserByEmail(email)
+    };
+  }
+
+  get servers() {
+    return {
+      previewCreate: (input: CreateSmartServerInput, options?: OperationOptions) => this.previewCreateServer(input, options),
+      createSmart: (input: CreateSmartServerInput, options?: OperationOptions) => this.createServerSmart(input, options)
+    };
+  }
+
+  get raw() {
+    return {
+      application: {
+        get: (path: string) => this.request<any>({ api: "application", path }),
+        post: (path: string, body?: unknown) => this.request<any>({ api: "application", method: "POST", path, body }),
+        patch: (path: string, body?: unknown) => this.request<any>({ api: "application", method: "PATCH", path, body }),
+        delete: (path: string) => this.request<any>({ api: "application", method: "DELETE", path })
+      },
+      client: {
+        get: (path: string) => this.request<any>({ api: "client", path }),
+        post: (path: string, body?: unknown) => this.request<any>({ api: "client", method: "POST", path, body }),
+        patch: (path: string, body?: unknown) => this.request<any>({ api: "client", method: "PATCH", path, body }),
+        delete: (path: string) => this.request<any>({ api: "client", method: "DELETE", path })
+      }
+    };
+  }
+
   server(identifier: string) {
     return new PteroServerHandle(this, identifier);
+  }
+
+  async listIds(nestId?: number) {
+    const [rawNodes, rawNests] = await Promise.all([
+      this.application.nodes.list(),
+      this.application.nests.list()
+    ]);
+    const nodes = getCollection(rawNodes).map(item => getDataAttributes(item));
+    const nests = getCollection(rawNests).map(item => getDataAttributes(item));
+    const result: Record<string, unknown> = { nodes, nests };
+    if (nestId) {
+      const rawEggs = await this.application.nests.eggs.list(nestId);
+      result.eggs = getCollection(rawEggs).map(item => getDataAttributes(item));
+    }
+    return result;
   }
 
   async request<T = unknown>(options: Parameters<HttpCore["request"]>[0]): Promise<T> {
@@ -234,7 +281,11 @@ export class PteroGateway {
       user,
       node: { id: input.nodeId, name: typeof nodeAttr.name === "string" ? nodeAttr.name : undefined, raw: rawNode },
       nest: { id: input.nestId, name: typeof nestAttr.name === "string" ? nestAttr.name : undefined, raw: rawNest },
-      egg: { id: input.eggId, name: typeof eggAttr.name === "string" ? eggAttr.egg_name ?? eggAttr.name : undefined, raw: rawEgg },
+      egg: {
+        id: input.eggId,
+        name: typeof eggAttr.egg_name === "string" ? eggAttr.egg_name : (typeof eggAttr.name === "string" ? eggAttr.name : undefined),
+        raw: rawEgg
+      },
       dockerImage: String(payload.docker_image),
       startup: String(payload.startup),
       environment: payload.environment as Record<string, string>,
@@ -316,7 +367,20 @@ export class PteroServerHandle {
   get startup() {
     return {
       get: () => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/startup` }),
+      variables: () => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/startup` }),
       set: async (env: string, value: string | number | boolean) => {
+        const raw = await this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/startup` });
+        const root = asObject(raw);
+        const data = root.data;
+        const variables = Array.isArray(data)
+          ? data
+          : asObject(asObject(asObject(data).attributes).relationships).variables;
+        const list: unknown[] = Array.isArray(asObject(variables).data) ? asObject(variables).data as unknown[] : [];
+        const matched = list.some((item: unknown) => String(asObject(asObject(item).attributes).env_variable ?? "").toUpperCase() === env.toUpperCase());
+        if (!matched && Array.isArray(data)) {
+          const fallbackMatched = data.some(item => String(asObject(asObject(item).attributes).env_variable ?? "").toUpperCase() === env.toUpperCase());
+          if (!fallbackMatched) throw new PteroError({ code: "STARTUP_VARIABLE_NOT_FOUND", message: `Variable startup ${env} tidak ditemukan.` });
+        }
         return this.gateway.request<any>({ api: "client", method: "PUT", path: `/servers/${this.identifier}/startup/variable`, body: { key: String(env), value: String(value) } });
       }
     };
@@ -335,7 +399,11 @@ export class PteroServerHandle {
   get databases() {
     return {
       list: () => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/databases` }),
-      create: (database: string, remote = "%") => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/databases`, body: { database, remote } }),
+      create: (database: string | { database: string; remote?: string }, remote = "%") => {
+        const dbName = typeof database === "string" ? database : database.database;
+        const remoteHost = typeof database === "string" ? remote : (database.remote ?? remote);
+        return this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/databases`, body: { database: dbName, remote: remoteHost } });
+      },
       rotatePassword: (databaseId: string) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/databases/${databaseId}/rotate-password` }),
       delete: (databaseId: string) => this.gateway.request<any>({ api: "client", method: "DELETE", path: `/servers/${this.identifier}/databases/${databaseId}` })
     };
@@ -344,10 +412,72 @@ export class PteroServerHandle {
   get backups() {
     return {
       list: () => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/backups` }),
-      create: (name?: string, ignored?: string[] | string, isLocked = false) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/backups`, body: { name, ignored: Array.isArray(ignored) ? ignored.join("\n") : ignored, is_locked: isLocked } }),
+      create: (nameOrOptions?: string | { name?: string; ignored?: string[] | string; isLocked?: boolean }, ignored?: string[] | string, isLocked = false) => {
+        const name = typeof nameOrOptions === "string" || nameOrOptions === undefined ? nameOrOptions : nameOrOptions.name;
+        const ignoredValue = typeof nameOrOptions === "object" && nameOrOptions !== null ? nameOrOptions.ignored : ignored;
+        const locked = typeof nameOrOptions === "object" && nameOrOptions !== null ? (nameOrOptions.isLocked ?? false) : isLocked;
+        return this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/backups`, body: { name, ignored: Array.isArray(ignoredValue) ? ignoredValue.join("\n") : ignoredValue, is_locked: locked } });
+      },
       get: (backupId: string) => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/backups/${backupId}` }),
+      details: (backupId: string) => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/backups/${backupId}` }),
       download: (backupId: string) => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/backups/${backupId}/download` }),
       delete: (backupId: string) => this.gateway.request<any>({ api: "client", method: "DELETE", path: `/servers/${this.identifier}/backups/${backupId}` })
+    };
+  }
+
+  get schedules() {
+    return {
+      list: () => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/schedules` }),
+      create: (input: { name: string; minute: string; hour: string; dayOfMonth: string; month: string; dayOfWeek: string; isActive?: boolean; onlyWhenOnline?: boolean }) => this.gateway.request<any>({
+        api: "client",
+        method: "POST",
+        path: `/servers/${this.identifier}/schedules`,
+        body: {
+          name: input.name,
+          minute: input.minute,
+          hour: input.hour,
+          day_of_month: input.dayOfMonth,
+          month: input.month,
+          day_of_week: input.dayOfWeek,
+          is_active: input.isActive ?? true,
+          only_when_online: input.onlyWhenOnline ?? false
+        }
+      }),
+      details: (scheduleId: number) => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/schedules/${scheduleId}` }),
+      update: (scheduleId: number, input: { name?: string; isActive?: boolean }) => this.gateway.request<any>({
+        api: "client",
+        method: "PATCH",
+        path: `/servers/${this.identifier}/schedules/${scheduleId}`,
+        body: {
+          ...(typeof input.name === "string" ? { name: input.name } : {}),
+          ...(typeof input.isActive === "boolean" ? { is_active: input.isActive } : {})
+        }
+      }),
+      run: (scheduleId: number) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/schedules/${scheduleId}/execute` }),
+      delete: (scheduleId: number) => this.gateway.request<any>({ api: "client", method: "DELETE", path: `/servers/${this.identifier}/schedules/${scheduleId}` }),
+      tasks: {
+        create: (scheduleId: number, input: { action: string; payload?: string; timeOffset?: number; continueOnFailure?: boolean }) => this.gateway.request<any>({
+          api: "client",
+          method: "POST",
+          path: `/servers/${this.identifier}/schedules/${scheduleId}/tasks`,
+          body: {
+            action: input.action,
+            payload: input.payload,
+            time_offset: input.timeOffset ?? 0,
+            continue_on_failure: input.continueOnFailure ?? false
+          }
+        }),
+        update: (scheduleId: number, taskId: number, input: { payload?: string; continueOnFailure?: boolean }) => this.gateway.request<any>({
+          api: "client",
+          method: "PATCH",
+          path: `/servers/${this.identifier}/schedules/${scheduleId}/tasks/${taskId}`,
+          body: {
+            ...(typeof input.payload === "string" ? { payload: input.payload } : {}),
+            ...(typeof input.continueOnFailure === "boolean" ? { continue_on_failure: input.continueOnFailure } : {})
+          }
+        }),
+        delete: (scheduleId: number, taskId: number) => this.gateway.request<any>({ api: "client", method: "DELETE", path: `/servers/${this.identifier}/schedules/${scheduleId}/tasks/${taskId}` })
+      }
     };
   }
 
@@ -366,7 +496,41 @@ export class PteroServerHandle {
     return this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/power`, body: { signal } });
   }
 
+  start() {
+    return this.power("start");
+  }
+
+  stop() {
+    return this.power("stop");
+  }
+
+  restart() {
+    return this.power("restart");
+  }
+
+  kill() {
+    return this.power("kill");
+  }
+
+  async probe() {
+    const [resources, startup, network, databases, backups, schedules, files] = await Promise.all([
+      this.resources().catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
+      this.startup.variables().catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
+      this.network.list().catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
+      this.databases.list().catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
+      this.backups.list().catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
+      this.schedules.list().catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
+      this.files.list().catch(error => ({ error: error instanceof Error ? error.message : String(error) }))
+    ]);
+    const checks = { resources, startup, network, databases, backups, schedules, files };
+    const ok = Object.values(checks).every(item => !("error" in asObject(item)));
+    return { ok, identifier: this.identifier, checks, resources, startup, network, databases, backups, schedules, files };
+  }
+
   command(command: string) {
+    if (/(^|[\s;&|])(rm\s+-rf\s+\/|:\(\)\{:\|:&\};:|mkfs\.|dd\s+if=\/dev\/zero)/i.test(command)) {
+      throw new PteroError({ code: "DANGEROUS_COMMAND", message: "Command terlihat berbahaya dan diblokir oleh safe mode." });
+    }
     return this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/command`, body: { command } });
   }
 }

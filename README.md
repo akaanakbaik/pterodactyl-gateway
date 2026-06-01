@@ -3,6 +3,15 @@
 ![Pterodactyl Gateway Logo](https://raw.githubusercontent.com/akaanakbaik/pterodactyl-gateway/main/logo.png)
 
 SDK TypeScript berfitur lengkap untuk Pterodactyl Panel. Fokus pada kemudahan integrasi bagi developer untuk membangun dashboard, bot, dan sistem otomasi panel yang kompleks.
+Versi stabil saat ini: **1.1.0**.
+
+## Navigasi
+
+- [Install](#install)
+- [SDK usage](#sdk-usage)
+- [Integration helpers](#integration-helpers)
+- [Keamanan](#keamanan)
+- [Troubleshooting](#troubleshooting)
 
 ## Fitur Utama
 
@@ -12,7 +21,7 @@ SDK TypeScript berfitur lengkap untuk Pterodactyl Panel. Fokus pada kemudahan in
 - **WebSocket Support**: Integrasi WebSocket untuk koneksi real-time ke konsol server dan statistik.
 - **Developer Experience (DX)**: Desain API yang intuitif dan mudah digunakan dengan penanganan error yang informatif.
 
-## Instalasi
+## Install
 
 ```bash
 npm install @akaanakbaik/pterodactyl-gateway
@@ -20,7 +29,7 @@ npm install @akaanakbaik/pterodactyl-gateway
 yarn add @akaanakbaik/pterodactyl-gateway
 ```
 
-## Penggunaan SDK
+## SDK usage
 
 ### Inisialisasi
 
@@ -139,6 +148,25 @@ const newSmartServer = await ptero.smart.servers.create({
 console.log('Server pintar baru:', newSmartServer);
 ```
 
+## Integration helpers
+
+Library ini menyediakan helper integrasi untuk use case populer seperti bot dan API:
+
+```typescript
+import { createIntegrationService } from "@akaanakbaik/pterodactyl-gateway";
+
+const service = createIntegrationService(
+  { domain: "https://panel.example.com", applicationKey: "ptla_xxx" },
+  { nodeId: 1, nestId: 5, eggId: 15 }
+);
+
+const preview = await service.preview({
+  kind: "whatsapp-bot",
+  name: "bot-akadev",
+  email: "owner@example.com"
+});
+```
+
 ### WebSocket
 
 ```typescript
@@ -181,6 +209,18 @@ ws.connect();
 ## Kontribusi
 
 Kami menyambut kontribusi! Silakan baca `CONTRIBUTING.md` untuk detail lebih lanjut.
+
+## Keamanan
+
+- Gunakan `safeMode` (default aktif) untuk mencegah operasi berisiko.
+- Simpan token PTLA/PTLC di environment variable, jangan hardcode di source.
+- Jalankan `npm run security:audit` secara berkala.
+
+## Troubleshooting
+
+- Jalankan `ptero-gateway doctor` untuk memeriksa konfigurasi domain dan key.
+- Gunakan `ptero-gateway self-check` untuk validasi paket lokal.
+- Gunakan `ptero-gateway release-check` untuk validasi kesiapan rilis.
 
 ## Lisensi
 

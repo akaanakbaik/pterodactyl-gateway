@@ -6,7 +6,7 @@ const jsonMode = rawArgs.includes("--json");
 const yesMode = rawArgs.includes("--yes") || rawArgs.includes("-y");
 const dryRunMode = rawArgs.includes("--dry-run");
 const allowAnyPath = rawArgs.includes("--allow-any-path");
-const args = rawArgs.filter(arg => arg !== "--json" && arg !== "--yes" && arg !== "-y" && arg !== "--dry-run" && arg !== "--allow-any-path");
+const args = rawArgs.filter((arg: string) => arg !== "--json" && arg !== "--yes" && arg !== "-y" && arg !== "--dry-run" && arg !== "--allow-any-path");
 const command = args[0] ?? "help";
 
 const SERVER_PRESETS = {

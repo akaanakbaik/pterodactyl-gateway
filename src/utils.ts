@@ -45,7 +45,7 @@ export function formatMiB(value: number): string {
 
 export function generatePassword(length = 18): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@$%";
-  const bytes = randomBytes(length);
+  const bytes = randomBytes(length) as Uint8Array;
   return Array.from(bytes, byte => chars[byte % chars.length]).join("");
 }
 

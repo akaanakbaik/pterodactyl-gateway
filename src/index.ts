@@ -2,6 +2,7 @@ export { PteroGateway } from "./gateway.js";
 export { PteroWebSocket } from "./websocket.js";
 export { PteroError, explainError } from "./errors.js";
 export { formatMiB, maskSecret, normalizeDomain, parseCpu, parseSizeToMiB } from "./utils.js";
+export * from "./integrations.js";
 export * from "./types.js";
 
 import { PteroGateway } from "./gateway.js";

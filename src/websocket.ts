@@ -16,7 +16,9 @@ export class PteroWebSocket {
     const { token, socket } = auth.data ? auth.data : auth;
 
     if (typeof WebSocket === 'undefined') {
-        const { WebSocket: WS } = await import('ws');
+        const wsModuleName = "ws";
+        const module = await import(wsModuleName);
+        const WS = (module as { WebSocket: new (url: string) => unknown }).WebSocket;
         this.ws = new WS(socket);
     } else {
         this.ws = new WebSocket(socket);
