@@ -15,11 +15,11 @@ export class PteroWebSocket {
     const auth = await this.gateway.server(this.serverId).websocket.auth();
     const { token, socket } = auth.data ? auth.data : auth;
 
-    if (typeof WebSocket === 'undefined') {
-        const { WebSocket: WS } = await import('ws');
+    if (typeof (globalThis as any).WebSocket === 'undefined') {
+        const WS = (await import('ws')).default;
         this.ws = new WS(socket);
     } else {
-        this.ws = new WebSocket(socket);
+        this.ws = new (globalThis as any).WebSocket(socket);
     }
 
     this.ws.onopen = () => {

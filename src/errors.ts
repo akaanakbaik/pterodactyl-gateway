@@ -26,71 +26,60 @@ export class PteroError extends Error {
     this.status = input.status;
     this.raw = input.raw;
   }
+
+  toString() {
+    let out = `\n[${this.code}] ${this.message}\n`;
+    if (this.hint) out += `💡 Petunjuk: ${this.hint}\n`;
+    if (this.steps.length > 0) {
+      out += `🛠️  Langkah Perbaikan:\n`;
+      this.steps.forEach((s, i) => out += `   ${i + 1}. ${s}\n`);
+    }
+    if (this.example) out += `📝 Contoh: ${JSON.stringify(this.example, null, 2)}\n`;
+    return out;
+  }
 }
 
 export function explainError(error: unknown): string {
-  if (error instanceof PteroError) {
-    const lines = [`${error.code}: ${error.message}`];
-    if (error.hint) lines.push(`\nPetunjuk: ${error.hint}`);
-    if (error.steps.length > 0) {
-      lines.push("\nCara memperbaiki:");
-      error.steps.forEach((step, index) => lines.push(`${index + 1}. ${step}`));
-    }
-    if (error.example !== undefined) lines.push(`\nContoh: ${JSON.stringify(error.example, null, 2)}`);
-    return lines.join("\n");
-  }
-  if (error instanceof Error) return error.message;
+  if (error instanceof PteroError) return error.toString();
+  if (error instanceof Error) return `[Error] ${error.message}`;
   return String(error);
 }
 
-export function nestEggMismatch(nestId: number, eggId: number, raw?: unknown): PteroError {
-  return new PteroError({
-    code: "NEST_EGG_MISMATCH",
-    message: `Egg ID ${eggId} tidak ditemukan atau tidak cocok dengan Nest ID ${nestId}.`,
-    hint: "Pastikan eggId berada di dalam nestId yang sama.",
-    steps: [
-      "Buka Admin Panel Pterodactyl.",
-      "Masuk ke menu Nests.",
-      "Pilih Nest yang ingin dipakai.",
-      "Buka daftar Eggs di dalam Nest tersebut.",
-      "Salin ID Egg yang benar.",
-      "Jalankan ulang createSmart dengan nestId dan eggId yang sesuai."
-    ],
-    example: { nestId, eggId },
-    raw
-  });
-}
-
-export function nodeNotFound(nodeId: number, raw?: unknown): PteroError {
-  return new PteroError({
-    code: "NODE_NOT_FOUND",
-    message: `Node ID ${nodeId} tidak ditemukan atau tidak bisa diakses.`,
-    hint: "Cek kembali Node ID dan permission PTLA.",
-    steps: [
-      "Buka Admin Panel Pterodactyl.",
-      "Masuk ke menu Nodes.",
-      "Pilih node yang ingin dipakai.",
-      "Salin ID node dari URL atau daftar node.",
-      "Pastikan node aktif dan tidak maintenance."
-    ],
-    example: { nodeId },
-    raw
-  });
-}
-
-export function noFreeAllocation(nodeId: number): PteroError {
-  return new PteroError({
+export const ErrorFactory = {
+  domainRequired: () => new PteroError({
+    code: "DOMAIN_REQUIRED",
+    message: "Domain atau Panel URL wajib diisi.",
+    hint: "SDK membutuhkan URL panel untuk melakukan request.",
+    steps: ["Cek konfigurasi saat memanggil createPtero()", "Pastikan domain menyertakan http:// atau https://"]
+  }),
+  authFailed: (type: "application" | "client") => new PteroError({
+    code: "AUTH_FAILED",
+    message: `Autentikasi ${type} API gagal.`,
+    hint: `API Key ${type === "application" ? "PTLA" : "PTLC"} tidak valid atau tidak memiliki izin.`,
+    steps: ["Cek kembali API Key di panel Pterodactyl", "Pastikan API Key memiliki permission yang cukup"]
+  }),
+  serverNotFound: (id: string) => new PteroError({
+    code: "SERVER_NOT_FOUND",
+    message: `Server dengan identifier '${id}' tidak ditemukan.`,
+    hint: "Identifier server biasanya berupa 8 karakter unik (misal: 311d56b7).",
+    steps: ["Cek daftar server di panel", "Pastikan identifier benar dan tidak tertukar dengan UUID"]
+  }),
+  userNotFound: (email: string) => new PteroError({
+    code: "USER_NOT_FOUND",
+    message: `User dengan email '${email}' tidak ditemukan.`,
+    hint: "User harus terdaftar di panel agar bisa digunakan.",
+    steps: ["Cek menu Users di Admin Panel", "Gunakan autoCreateUser: true jika ingin otomatis membuat user baru"]
+  }),
+  noFreeAllocation: (nodeId: number) => new PteroError({
     code: "NO_FREE_ALLOCATION",
-    message: `Tidak ada allocation kosong di Node ID ${nodeId}.`,
-    hint: "Tambahkan allocation di node atau pilih node lain.",
-    steps: [
-      "Buka Admin Panel Pterodactyl.",
-      "Masuk ke menu Nodes.",
-      `Pilih Node ID ${nodeId}.`,
-      "Buka tab Allocations.",
-      "Tambahkan IP dan port baru.",
-      "Pastikan allocation belum dipakai server lain.",
-      "Jalankan ulang create server."
-    ]
-  });
-}
+    message: `Tidak ada alokasi port kosong di Node ID ${nodeId}.`,
+    hint: "Setiap server membutuhkan minimal satu alokasi port.",
+    steps: ["Buka Admin Panel > Nodes > Pilih Node > Tab Allocations", "Tambahkan IP dan port baru", "Pastikan alokasi belum dipakai server lain"]
+  }),
+  insufficientResources: (type: string) => new PteroError({
+    code: "INSUFFICIENT_RESOURCES",
+    message: `Resource ${type} tidak mencukupi di node pilihan.`,
+    hint: "Node mungkin sudah penuh atau melebihi limit over-allocation.",
+    steps: ["Cek statistik node di panel", "Kurangi limit RAM/Disk pada specs server", "Gunakan node lain yang masih memiliki kapasitas"]
+  })
+};

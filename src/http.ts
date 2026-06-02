@@ -1,5 +1,6 @@
-import { PteroError } from "./errors.js";
+import { PteroError, ErrorFactory } from "./errors.js";
 import { PteroRequestOptions } from "./types.js";
+import { PteroLogger } from "./logger.js";
 
 export type HttpCoreConfig = {
   domain: string;
@@ -8,23 +9,24 @@ export type HttpCoreConfig = {
   timeout: number;
   userAgent: string;
   fetcher: typeof fetch;
+  debug?: boolean;
 };
 
 export class HttpCore {
   private config: HttpCoreConfig;
+  readonly logger: PteroLogger;
 
   constructor(config: HttpCoreConfig) {
     this.config = config;
+    this.logger = new PteroLogger(config.debug ?? true);
   }
 
   async request<T = unknown>(options: PteroRequestOptions): Promise<T> {
     const key = options.api === "application" ? this.config.applicationKey : this.config.clientKey;
     if (!key) {
-      throw new PteroError({
-        code: options.api === "application" ? "PTLA_REQUIRED" : "PTLC_REQUIRED",
-        message: options.api === "application" ? "PTLA wajib diisi untuk Application API." : "PTLC wajib diisi untuk Client API.",
-        hint: "Isi key yang sesuai di config atau .env."
-      });
+      const err = options.api === "application" ? ErrorFactory.authFailed("application") : ErrorFactory.authFailed("client");
+      this.logger.error(err.message);
+      throw err;
     }
 
     const controller = new AbortController();
@@ -35,6 +37,7 @@ export class HttpCore {
     const contentType = options.contentType ?? "json";
 
     try {
+      this.logger.debug(`Request: ${options.method ?? "GET"} ${url}`);
       const response = await this.config.fetcher(url, {
         method: options.method ?? "GET",
         headers: {
@@ -51,30 +54,37 @@ export class HttpCore {
       const data = options.responseType === "text" ? text : text ? safeJson(text) : undefined;
 
       if (!response.ok) {
-        throw new PteroError({
+        const err = new PteroError({
           code: normalizeStatusCode(response.status),
           message: extractMessage(data) ?? `Request gagal dengan status ${response.status}.`,
           status: response.status,
           hint: buildStatusHint(response.status, options.api),
           raw: data
         });
+        this.logger.error(`[${err.code}] ${err.message}`);
+        throw err;
       }
 
+      this.logger.debug(`Response: ${response.status} OK`);
       return data as T;
     } catch (error) {
       if (error instanceof PteroError) throw error;
       if (error instanceof DOMException && error.name === "AbortError") {
-        throw new PteroError({
+        const err = new PteroError({
           code: "REQUEST_TIMEOUT",
           message: "Request ke Pterodactyl timeout.",
           hint: "Cek koneksi server, domain panel, Cloudflare, firewall, atau naikkan timeout."
         });
+        this.logger.error(err.message);
+        throw err;
       }
-      throw new PteroError({
+      const err = new PteroError({
         code: "PANEL_UNREACHABLE",
         message: error instanceof Error ? error.message : "Panel tidak bisa diakses.",
         hint: "Cek domain panel, SSL, firewall, dan koneksi VPS."
       });
+      this.logger.error(err.message);
+      throw err;
     } finally {
       clearTimeout(timer);
     }

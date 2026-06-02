@@ -63,7 +63,7 @@ async function wizardCreateUser(flags: WizardFlags) {
     }
 
     const ptero = createPtero.fromEnv();
-    const result = await ptero.users.createSmart(payload);
+    const result = await ptero.smart.users.create(payload);
     printResult(result, flags, "User berhasil dibuat.");
   } finally {
     rl.close();
@@ -122,7 +122,7 @@ async function wizardCreateServer(flags: WizardFlags) {
     const normalizedInput = normalizeCreateServerInput(inputPayload);
 
     if (flags.dryRun) {
-      const result = await ptero.servers.createSmart(normalizedInput, { dryRun: true });
+      const result = await ptero.smart.servers.create(normalizedInput, { dryRun: true });
       printResult(result, flags, "Create server dry-run OK.");
       return;
     }
@@ -135,7 +135,7 @@ async function wizardCreateServer(flags: WizardFlags) {
       }
     }
 
-    const result = await ptero.servers.createSmart(normalizedInput);
+    const result = await ptero.smart.servers.create(normalizedInput);
     printResult(result, flags, "Server berhasil dibuat.");
   } finally {
     rl.close();

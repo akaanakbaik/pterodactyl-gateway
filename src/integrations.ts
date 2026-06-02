@@ -141,9 +141,9 @@ export function createIntegrationService(config: PteroConfig | PteroGateway, def
   return {
     gateway,
     input: withDefaults,
-    preview: (input: Parameters<typeof withDefaults>[0], options?: OperationOptions) => gateway.servers.previewCreate(withDefaults(input), options),
-    dryRun: (input: Parameters<typeof withDefaults>[0], options?: OperationOptions) => gateway.servers.createSmart(withDefaults(input), { ...options, dryRun: true }),
-    create: (input: Parameters<typeof withDefaults>[0], options?: OperationOptions) => gateway.servers.createSmart(withDefaults(input), options),
+    preview: (input: Parameters<typeof withDefaults>[0], options?: OperationOptions) => gateway.smart.servers.preview(withDefaults(input), options),
+    dryRun: (input: Parameters<typeof withDefaults>[0], options?: OperationOptions) => gateway.smart.servers.create(withDefaults(input), { ...options, dryRun: true }),
+    create: (input: Parameters<typeof withDefaults>[0], options?: OperationOptions) => gateway.smart.servers.create(withDefaults(input), options),
     server: (identifier: string) => gateway.server(identifier)
   };
 }

@@ -1,4 +1,4 @@
-import { PteroError } from "./errors.js";
+import { PteroError, ErrorFactory } from "./errors.js";
 import { HttpCore } from "./http.js";
 import { buildServerPayload, buildUserPayload, normalizeSpecs, normalizeUserResponse, progress, selectAllocations, validateCreateInput } from "./smart.js";
 import {
@@ -11,14 +11,11 @@ import {
   PreviewCreateServer,
   PteroConfig,
   PteroMode,
-  ServerPowerSignal,
-  PteroAppUser,
-  PteroAppNode,
-  PteroAppServer,
-  PteroClientServer
+  ServerPowerSignal
 } from "./types.js";
 import { asObject, getCollection, getDataAttributes, maskSecret, normalizeDomain } from "./utils.js";
 import { PteroWebSocket } from "./websocket.js";
+import { PteroLogger } from "./logger.js";
 
 export class PteroGateway {
   readonly domain: string;
@@ -28,25 +25,33 @@ export class PteroGateway {
   readonly userAgent: string;
   readonly safeMode: boolean;
   readonly presets: NonNullable<PteroConfig["presets"]>;
+  readonly logger: PteroLogger;
   private http: HttpCore;
 
   constructor(config: PteroConfig) {
     const domain = config.domain ?? config.panelUrl;
-    if (!domain) throw new PteroError({ code: "DOMAIN_REQUIRED", message: "domain atau panelUrl wajib diisi." });
+    if (!domain) throw ErrorFactory.domainRequired();
     this.domain = normalizeDomain(domain);
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
     this.timeout = config.timeout ?? 15000;
     this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/1.1.0";
     this.safeMode = config.safeMode ?? true;
-    this.presets = config.presets ?? {};
+    this.presets = config.presets ?? {
+      mini: { memory: "512MB", disk: "1GB", cpu: 50, databases: 0, allocations: 1, backups: 0 },
+      basic: { memory: "1GB", disk: "2GB", cpu: 100, databases: 1, allocations: 1, backups: 1 },
+      standard: { memory: "2GB", disk: "5GB", cpu: 200, databases: 2, allocations: 1, backups: 2 },
+      premium: { memory: "4GB", disk: "10GB", cpu: 400, databases: 5, allocations: 1, backups: 5 }
+    };
+    this.logger = new PteroLogger(config.debug ?? true);
     this.http = new HttpCore({
       domain: this.domain,
       applicationKey: this.applicationKey,
       clientKey: this.clientKey,
       timeout: this.timeout,
       userAgent: this.userAgent,
-      fetcher: config.fetcher ?? fetch
+      fetcher: config.fetcher ?? fetch,
+      debug: config.debug
     });
   }
 
@@ -81,6 +86,10 @@ export class PteroGateway {
         list: (page = 1) => this.request<any>({ api: "application", path: `/servers?page=${page}` }),
         get: (id: number) => this.request<any>({ api: "application", path: `/servers/${id}` }),
         create: (data: any) => this.request<any>({ api: "application", method: "POST", path: "/servers", body: data }),
+        update: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/servers/${id}/details`, body: data }),
+        updateBuild: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/servers/${id}/build`, body: data }),
+        updateStartup: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/servers/${id}/startup`, body: data }),
+        updateInventory: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/servers/${id}/inventory`, body: data }),
         suspend: (id: number) => this.request<any>({ api: "application", method: "POST", path: `/servers/${id}/suspend` }),
         unsuspend: (id: number) => this.request<any>({ api: "application", method: "POST", path: `/servers/${id}/unsuspend` }),
         reinstall: (id: number) => this.request<any>({ api: "application", method: "POST", path: `/servers/${id}/reinstall` }),
@@ -105,7 +114,7 @@ export class PteroGateway {
     return {
       account: {
         get: () => this.request<any>({ api: "client", path: "/account" }),
-        2fa: () => this.request<any>({ api: "client", path: "/account/two-factor" }),
+        twoFactor: () => this.request<any>({ api: "client", path: "/account/two-factor" }),
         apiKeys: {
           list: () => this.request<any>({ api: "client", path: "/account/api-keys" }),
           create: (description: string, allowedIps: string[] = []) => this.request<any>({ api: "client", method: "POST", path: "/account/api-keys", body: { description, allowed_ips: allowedIps } }),
@@ -113,7 +122,7 @@ export class PteroGateway {
         }
       },
       servers: {
-        list: (page = 1) => this.request<any>({ api: "client", path: `/api/client?page=${page}` })
+        list: (page = 1) => this.request<any>({ api: "client", path: `/?page=${page}` })
       }
     };
   }
@@ -143,9 +152,12 @@ export class PteroGateway {
 
   async connect(): Promise<ConnectResult> {
     const started = Date.now();
+    this.logger.info(`Menghubungkan ke ${this.domain}...`);
     const application = await this.checkApplicationKey();
     const client = await this.checkClientKey();
     const mode = this.resolveMode(application.valid, client.valid);
+    if (mode === "invalid") this.logger.error("Gagal terhubung ke panel. Cek domain dan API Key.");
+    else this.logger.success(`Terhubung! Mode: ${mode} (${Date.now() - started}ms)`);
     return { ok: mode !== "invalid", mode, domain: this.domain, latency: Date.now() - started, application, client };
   }
 
@@ -166,20 +178,24 @@ export class PteroGateway {
   }
 
   private async createUserSmart(input: CreateUserSmartInput, options?: OperationOptions) {
+    this.logger.info(`Membuat user smart: ${input.email}`);
     progress(options, "validate", 10, "Memvalidasi user.");
     const built = buildUserPayload(input);
     if (options?.dryRun) return { dryRun: true, payload: built.payload, generatedPassword: built.generatedPassword };
     progress(options, "request", 70, "Membuat user di Pterodactyl.");
     const raw = await this.application.users.create(built.payload);
+    this.logger.success(`User berhasil dibuat: ${input.email}`);
     progress(options, "done", 100, "User berhasil dibuat.");
     return normalizeUserResponse(raw, built.generatedPassword);
   }
 
   private async getOrCreateUser(input: CreateUserSmartInput, options?: OperationOptions) {
     const found = await this.findUserByEmail(input.email);
-    if (found) return { ...found, created: false };
-    const created = await this.createUserSmart(input, options);
-    return { ...created, created: true };
+    if (found) {
+      this.logger.info(`User ditemukan: ${input.email}`);
+      return { ...found, created: false };
+    }
+    return { ...(await this.createUserSmart(input, options)), created: true };
   }
 
   private async findUserByEmail(email: string) {
@@ -196,14 +212,14 @@ export class PteroGateway {
     if (!input.email) throw new PteroError({ code: "EMAIL_REQUIRED", message: "email wajib diisi jika userId kosong." });
     const found = await this.findUserByEmail(input.email);
     if (found) return { id: found.id, email: found.email, username: found.username, created: false };
-    if (!input.autoCreateUser) throw new PteroError({ code: "USER_NOT_FOUND", message: `User dengan email ${input.email} tidak ditemukan.`, hint: "Aktifkan autoCreateUser atau buat user terlebih dahulu." });
-    if (!input.username) throw new PteroError({ code: "USERNAME_REQUIRED_FOR_AUTO_CREATE_USER", message: "username wajib diisi saat autoCreateUser aktif." });
-    const user = await this.createUserSmart({ username: input.username, email: input.email, password: input.password ?? "auto", administrator: input.administrator ?? false });
+    if (!input.autoCreateUser) throw ErrorFactory.userNotFound(input.email);
+    const user = await this.createUserSmart({ username: input.username || input.email.split("@")[0]!, email: input.email, password: input.password ?? "auto", administrator: input.administrator ?? false });
     if ("dryRun" in user) throw new PteroError({ code: "INTERNAL_DRY_RUN_USER", message: "Dry run user tidak valid pada flow create server." });
     return { id: user.id, email: user.email, username: user.username, created: true };
   }
 
   private async previewCreateServer(input: CreateSmartServerInput, options?: OperationOptions) {
+    this.logger.info(`Menyiapkan preview server: ${input.name}`);
     progress(options, "validate", 5, "Memvalidasi input server.");
     const specsInput = validateCreateInput(input, input.specs ?? (input.preset ? this.presets[input.preset] : undefined));
     const specs = normalizeSpecs(specsInput);
@@ -221,7 +237,7 @@ export class PteroGateway {
     try {
       allocation = selectAllocations(rawAllocations, allocationCount, input.allocation ?? "auto");
     } catch (error) {
-      if (error instanceof PteroError && error.code === "NO_FREE_ALLOCATION") throw new PteroError({ code: "NO_FREE_ALLOCATION", message: `Tidak ada allocation kosong di Node ID ${input.nodeId}.`, hint: error.hint, steps: error.steps, example: error.example, raw: error.raw });
+      if (error instanceof PteroError && error.code === "NO_FREE_ALLOCATION") throw ErrorFactory.noFreeAllocation(input.nodeId);
       throw error;
     }
     progress(options, "payload", 80, "Membangun payload server.");
@@ -234,7 +250,7 @@ export class PteroGateway {
       user,
       node: { id: input.nodeId, name: typeof nodeAttr.name === "string" ? nodeAttr.name : undefined, raw: rawNode },
       nest: { id: input.nestId, name: typeof nestAttr.name === "string" ? nestAttr.name : undefined, raw: rawNest },
-      egg: { id: input.eggId, name: typeof eggAttr.name === "string" ? eggAttr.egg_name ?? eggAttr.name : undefined, raw: rawEgg },
+      egg: { id: input.eggId, name: typeof eggAttr.name === "string" ? (eggAttr.name as string) : undefined, raw: rawEgg },
       dockerImage: String(payload.docker_image),
       startup: String(payload.startup),
       environment: payload.environment as Record<string, string>,
@@ -250,8 +266,10 @@ export class PteroGateway {
   private async createServerSmart(input: CreateSmartServerInput, options?: OperationOptions): Promise<NormalizedServer | { dryRun: true; preview: unknown; payload: Record<string, unknown> }> {
     const preview = await this.previewCreateServer(input, options);
     if (options?.dryRun) return { dryRun: true, preview, payload: preview.payload };
+    this.logger.info(`Deploying server: ${input.name}`);
     progress(options, "request", 90, "Membuat server di Pterodactyl.");
     const raw = await this.application.servers.create(preview.payload);
+    this.logger.success(`Server berhasil di-deploy: ${input.name}`);
     progress(options, "done", 100, "Server berhasil dibuat.");
     const attributes = getDataAttributes(raw);
     return { id: typeof attributes.id === "number" ? attributes.id : Number(attributes.id ?? 0) || undefined, identifier: typeof attributes.identifier === "string" ? attributes.identifier : undefined, uuid: typeof attributes.uuid === "string" ? attributes.uuid : undefined, name: typeof attributes.name === "string" ? attributes.name : undefined, raw };
@@ -363,10 +381,12 @@ export class PteroServerHandle {
   }
 
   power(signal: ServerPowerSignal) {
+    this.gateway.logger.info(`Mengirim sinyal ${signal} ke server ${this.identifier}`);
     return this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/power`, body: { signal } });
   }
 
   command(command: string) {
+    this.gateway.logger.info(`Mengirim command ke server ${this.identifier}: ${command}`);
     return this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/command`, body: { command } });
   }
 }

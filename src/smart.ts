@@ -1,4 +1,5 @@
-import { noFreeAllocation, PteroError } from "./errors.js";
+import { PteroError, ErrorFactory } from "./errors.js";
+const noFreeAllocation = ErrorFactory.noFreeAllocation;
 import { AllocationInput, CreateSmartServerInput, CreateUserSmartInput, OperationOptions, PreviewCreateServer, ServerSpecsInput } from "./types.js";
 import { asObject, emitProgress, ensureNonEmptyString, ensureNonNegativeInteger, ensurePositiveInteger, generatePassword, getCollection, getDataAttributes, parseCpu, parseSizeToMiB, toBoolean } from "./utils.js";
 
@@ -90,7 +91,16 @@ export function selectAllocations(raw: unknown, count: number, input: Allocation
   if (strategy === "random") free.sort(() => Math.random() - 0.5);
 
   const required = Math.max(1, count);
-  if (free.length < required) throw noFreeAllocation(0);
+  if (free.length < required) {
+    if (typeof input === "object" && input.strategy === "range") {
+        throw new PteroError({
+            code: "NO_FREE_ALLOCATION",
+            message: `Tidak ada alokasi port kosong dalam rentang ${portRange![0]}-${portRange![1]}.`,
+            hint: "Coba perluas rentang port atau tambahkan alokasi baru di panel."
+        });
+    }
+    throw noFreeAllocation(0);
+  }
   return {
     default: free[0]!.id,
     additional: free.slice(1, required).map(item => item.id)

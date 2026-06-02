@@ -1,187 +1,156 @@
-# Pterodactyl Gateway SDK
+# Akadev Pterodactyl Gateway
 
-![Pterodactyl Gateway Logo](https://raw.githubusercontent.com/akaanakbaik/pterodactyl-gateway/main/logo.png)
+**SDK TypeScript Modern untuk Integrasi Pterodactyl Panel yang Mudah, Lengkap, dan Real-time.**
 
-SDK TypeScript berfitur lengkap untuk Pterodactyl Panel. Fokus pada kemudahan integrasi bagi developer untuk membangun dashboard, bot, dan sistem otomasi panel yang kompleks.
+`@akaanakbaik/pterodactyl-gateway` · `v1.1.0` · `Node.js >=18` · `MIT`
+
+[**npm**](https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway) · [**GitHub**](https://github.com/akaanakbaik/pterodactyl-gateway)
+
+Pterodactyl Gateway adalah SDK yang dirancang khusus untuk memudahkan developer (baik mahir maupun awam) dalam membangun aplikasi yang terintegrasi dengan Pterodactyl Panel. Dengan fokus pada **SDK-first approach**, sistem logging yang informatif, dan fitur real-time, Anda dapat membuat dashboard hosting, bot panel, atau sistem otomatisasi lainnya dengan sangat cepat.
 
 ## Fitur Utama
 
-- **Full TypeScript**: Mendukung TypeScript secara penuh dengan definisi tipe yang komprehensif untuk semua respons API Pterodactyl.
-- **Modular API**: Akses terstruktur ke Application API (Admin) dan Client API (User).
-- **Smart Layer**: Abstraksi tingkat tinggi untuk operasi kompleks seperti pembuatan server dan manajemen user.
-- **WebSocket Support**: Integrasi WebSocket untuk koneksi real-time ke konsol server dan statistik.
-- **Developer Experience (DX)**: Desain API yang intuitif dan mudah digunakan dengan penanganan error yang informatif.
+-   🚀 **Smart SDK**: Inisialisasi mudah dengan smart defaults untuk Nest, Egg, dan Alokasi Port.
+-   🛠️ **Full CRUD Support**: Kelola User dan Server (Create, Read, Update, Delete) secara lengkap.
+-   📡 **Real-time Control**: Dukungan WebSocket untuk konsol server dan statistik resource.
+-   📝 **Super Logger**: Sistem log informatif (Success, Info, Warn, Debug, Error) untuk memudahkan debugging.
+-   ⚠️ **Custom Error Handling**: Pesan error yang sangat detail lengkap dengan petunjuk cara memperbaikinya.
+-   🔒 **Type Safe**: Ditulis sepenuhnya dalam TypeScript dengan interface API yang akurat.
+-   🤖 **Integration Helpers**: Template siap pakai untuk bot Telegram, WhatsApp, Discord, dan Website API.
 
 ## Instalasi
 
 ```bash
 npm install @akaanakbaik/pterodactyl-gateway
-# atau
-yarn add @akaanakbaik/pterodactyl-gateway
 ```
 
-## Penggunaan SDK
+## Quick Start (Sangat Mudah!)
 
-### Inisialisasi
-
-Anda dapat menginisialisasi `PteroGateway` dengan konfigurasi manual atau dari environment variables.
+Cukup masukkan domain dan API Key Anda, dan SDK siap digunakan.
 
 ```typescript
-import { createPtero } from '@akaanakbaik/pterodactyl-gateway';
+import { createPtero } from "@akaanakbaik/pterodactyl-gateway";
 
-// Dari konfigurasi manual
 const ptero = createPtero({
-  domain: 'https://panel.example.com',
-  applicationKey: 'ptla_YOUR_APPLICATION_KEY',
-  clientKey: 'ptlc_YOUR_CLIENT_KEY',
+  domain: "https://panel.anda.com",
+  ptla: "ptla_xxx", // Application API Key (Admin)
+  ptlc: "ptlc_xxx", // Client API Key (User)
+  debug: true       // Aktifkan log super lengkap
 });
 
-// Dari environment variables (PTERO_DOMAIN, PTERO_APPLICATION_KEY, PTERO_CLIENT_KEY)
-const pteroFromEnv = createPtero.fromEnv();
+// Cek koneksi
+const status = await ptero.connect();
+if (status.ok) {
+  console.log("Terhubung ke panel!");
+}
 ```
 
-### Application API (Admin)
+## Manajemen User (Smart & Auto)
 
-#### Mengelola User
+Anda tidak perlu pusing mengecek apakah user sudah ada atau belum.
 
 ```typescript
-// Membuat user baru
-const newUser = await ptero.application.users.create({
-  username: 'newuser',
-  email: 'newuser@example.com',
-  first_name: 'New',
-  last_name: 'User',
-  password: 'StrongPassword123',
-  root_admin: false,
+// Ambil user jika ada, atau buat baru jika belum ada
+const user = await ptero.smart.users.getOrCreate({
+  username: "akadev_user",
+  email: "user@example.com",
+  password: "PasswordAman123!",
+  administrator: false
 });
-console.log('User baru:', newUser);
 
-// Mendapatkan daftar user
-const users = await ptero.application.users.list();
-console.log('Daftar user:', users.data);
-
-// Mendapatkan detail user
-const userDetail = await ptero.application.users.get(1);
-console.log('Detail user:', userDetail);
+console.log(`User ID: ${user.id}`);
 ```
 
-#### Mengelola Server
+## Manajemen Server (Deploy Instan)
+
+Membuat server kini hanya butuh satu perintah. SDK akan otomatis mencarikan alokasi port yang kosong.
 
 ```typescript
-// Mendapatkan daftar server
-const servers = await ptero.application.servers.list();
-console.log('Daftar server:', servers.data);
+const server = await ptero.smart.servers.create({
+  name: "My Awesome Bot",
+  email: "user@example.com",
+  autoCreateUser: true, // Otomatis buat user jika email belum terdaftar
+  nodeId: 1,
+  nestId: 5,   // NodeJS Nest
+  eggId: 18,   // NodeJS Egg
+  preset: "basic", // Gunakan preset specs (mini/basic/standard/premium)
+});
 
-// Menangguhkan server
-await ptero.application.servers.suspend(123);
-console.log('Server 123 ditangguhkan.');
+console.log(`Server Identifier: ${server.identifier}`);
 ```
 
-### Client API (User)
+## Kontrol Server & Real-time
 
-#### Mengakses Server Spesifik
+Gunakan `serverHandle` untuk mengontrol server secara mendalam.
 
 ```typescript
-const server = ptero.server('your-server-identifier');
+const server = ptero.server("a0345ab5");
 
-// Mendapatkan resource server
-const resources = await server.resources();
-console.log('Resource server:', resources);
+// Power actions
+await server.power("start");
+await server.power("restart");
 
-// Mengirim command ke konsol server
-await server.command('say Hello World!');
-console.log('Command dikirim.');
+// Kirim command ke konsol
+await server.command("say Hello World!");
 
-// Mengontrol daya server
-await server.power('restart');
-console.log('Server di-restart.');
+// Baca resource (CPU, RAM, Disk)
+const stats = await server.resources();
+console.log(stats.attributes.resources);
+
+// File Manager
+await server.files.write("/config.json", JSON.stringify({ version: "1.0.0" }));
+const content = await server.files.read("/config.json");
 ```
 
-#### Manajemen File
+### Real-time Console (WebSocket)
 
 ```typescript
-// Listing file di direktori root
-const files = await server.files.list('/');
-console.log('Files di root:', files.data);
+const ws = server.websocket.create();
 
-// Membaca konten file
-const fileContent = await server.files.read('/server.properties');
-console.log('Konten server.properties:', fileContent);
+ws.on("status", (data) => {
+  console.log(`Status Server: ${data.state}`);
+});
 
-// Menulis konten ke file
-await server.files.write('/newfile.txt', 'Ini adalah konten baru.');
-console.log('newfile.txt dibuat.');
+ws.on("console", (data) => {
+  console.log(`[CONSOLE] ${data.line}`);
+});
+
+ws.on("stats", (data) => {
+  console.log(`RAM: ${data.memory_bytes / 1024 / 1024} MB`);
+});
+
+await ws.connect();
 ```
 
-### Smart Layer
+## Sistem Error & Logging Super Lengkap
 
-#### Membuat Server dengan Smart Layer
+SDK ini dilengkapi dengan `PteroLogger` yang memberikan output cantik di terminal Anda. Jika terjadi kesalahan, `PteroError` akan memberikan alasan yang jelas:
 
-```typescript
-const newSmartServer = await ptero.smart.servers.create({
-  name: 'My New Game Server',
-  description: 'Server game otomatis',
-  nodeId: 1, // ID Node Pterodactyl
-  nestId: 5, // ID Nest (misal: Minecraft)
-  eggId: 15, // ID Egg (misal: Paper)
-  email: 'owner@example.com', // Email user, akan dibuat jika belum ada
-  username: 'gameserver_owner',
-  specs: {
-    memory: '4GB',
-    disk: '20GB',
-    cpu: '100%',
-    databases: 1,
-    allocations: 1,
-    backups: 0,
-  },
-  autoCreateUser: true,
-});
-console.log('Server pintar baru:', newSmartServer);
+```text
+❌ [AUTH_FAILED] Autentikasi client API gagal.
+💡 Petunjuk: API Key PTLC tidak valid atau tidak memiliki izin.
+🛠️ Langkah Perbaikan:
+   1. Cek kembali API Key di panel Pterodactyl
+   2. Pastikan API Key memiliki permission yang cukup
 ```
 
-### WebSocket
+## Preset Spesifikasi
 
-```typescript
-import { createPtero, PteroWebSocket } from '@akaanakbaik/pterodactyl-gateway';
+Anda dapat menggunakan preset bawaan atau melakukan override:
 
-const ptero = createPtero.fromEnv();
-const serverId = 'your-server-identifier';
-const ws = ptero.server(serverId).websocket.create();
+| Preset | RAM | Disk | CPU |
+| :--- | :--- | :--- | :--- |
+| `mini` | 512MB | 1GB | 50% |
+| `basic` | 1GB | 2GB | 100% |
+| `standard` | 2GB | 5GB | 200% |
+| `premium` | 4GB | 10GB | 400% |
 
-ws.on('open', () => {
-  console.log('WebSocket terhubung.');
-  ws.send('auth', [token]);
-  ws.send('send command', ['say Hello from WebSocket!']);
-});
+## Keamanan
 
-ws.on('console output', (data: string) => {
-  console.log('Output konsol:', data);
-});
+- **Jangan pernah** membagikan PTLA/PTLC Anda di client-side (browser).
+- Gunakan environment variables (`PTERO_DOMAIN`, `PTERO_PTLA`, `PTERO_PTLC`) untuk keamanan maksimal.
+- SDK ini mendukung `PteroGateway.fromEnv()` untuk kemudahan deployment.
 
-ws.on('stats', (data: any) => {
-  console.log('Statistik server:', data);
-});
+---
 
-ws.on('close', () => {
-  console.log('WebSocket terputus.');
-});
-
-ws.on('error', (err: any) => {
-  console.error('WebSocket error:', err);
-});
-
-ws.connect();
-
-// Untuk memutuskan koneksi setelah beberapa waktu
-// setTimeout(() => {
-//   ws.close();
-// }, 60000);
-```
-
-## Kontribusi
-
-Kami menyambut kontribusi! Silakan baca `CONTRIBUTING.md` untuk detail lebih lanjut.
-
-## Lisensi
-
-Proyek ini dilisensikan di bawah [MIT License](LICENSE).
+Dibuat dengan ❤️ oleh [akaanakbaik](https://github.com/akaanakbaik)
