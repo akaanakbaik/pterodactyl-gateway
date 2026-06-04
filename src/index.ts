@@ -4,6 +4,12 @@ export { PteroLogger } from "./logger.js";
 export { PteroError, explainError } from "./errors.js";
 export { formatMiB, maskSecret, normalizeDomain, parseCpu, parseSizeToMiB } from "./utils.js";
 export * from "./types.js";
+export {
+  createIntegrationServerInput,
+  createIntegrationService,
+  getIntegrationKinds,
+  getIntegrationDefaults
+} from "./integrations.js";
 
 import { PteroGateway } from "./gateway.js";
 import { PteroConfig } from "./types.js";
