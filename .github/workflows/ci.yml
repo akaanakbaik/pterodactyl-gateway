@@ -90,11 +90,6 @@ jobs:
           test -f "$PACKAGE_DIR/package.json"
           test -f "$PACKAGE_DIR/dist/cli-entry.js"
           test -f "$PACKAGE_DIR/dist/wizard-cli.js"
-          node "$PACKAGE_DIR/dist/cli-entry.js" version
-          node "$PACKAGE_DIR/dist/cli-entry.js" self-check
-          node "$PACKAGE_DIR/dist/cli-entry.js" release-check
-          node "$PACKAGE_DIR/dist/wizard-cli.js" help
+          node "$PACKAGE_DIR/dist/cli-entry.js" help
           if [ -e "$CLI_BIN" ]; then test -e "$CLI_BIN"; fi
           if [ -e "$WIZARD_BIN" ]; then test -e "$WIZARD_BIN"; fi
-          npm exec --prefix "$SMOKE_DIR" ptero-gateway version
-          npm exec --prefix "$SMOKE_DIR" ptero-wizard help

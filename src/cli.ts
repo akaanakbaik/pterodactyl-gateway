@@ -9,10 +9,12 @@ const args = rawArgs.filter(arg => arg !== "--json" && arg !== "--yes" && arg !=
 const command = args[0] ?? "help";
 
 async function main() {
-  if (command === "help" || command === "--help" || command === "-h") {
-    console.log("Pterodactyl Gateway CLI (v1.1.0)");
-    return;
-  }
+    if (command === "help" || command === "--help" || command === "-h") {
+      console.log("Pterodactyl Gateway CLI (v1.1.0)");
+      console.log("Usage: ptero-gateway <command> [args]");
+      console.log("Commands: doctor, servers, server");
+      return;
+    }
 
   const ptero = createPtero.fromEnv();
 
