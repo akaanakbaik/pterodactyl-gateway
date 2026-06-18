@@ -2,7 +2,7 @@
 
 **SDK TypeScript Modern untuk Integrasi Pterodactyl Panel yang Mudah, Lengkap, dan Real-time.**
 
-`@akaanakbaik/pterodactyl-gateway` · `v1.1.0` · `Node.js >=18` · `MIT`
+`@akaanakbaik/pterodactyl-gateway` · `v1.2.0` · `Node.js >=18` · `MIT`
 
 [**npm**](https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway) · [**GitHub**](https://github.com/akaanakbaik/pterodactyl-gateway)
 
@@ -17,6 +17,8 @@ Pterodactyl Gateway adalah SDK yang dirancang khusus untuk memudahkan developer 
 -   ⚠️ **Custom Error Handling**: Pesan error yang sangat detail lengkap dengan petunjuk cara memperbaikinya.
 -   🔒 **Type Safe**: Ditulis sepenuhnya dalam TypeScript dengan interface API yang akurat.
 -   🤖 **Integration Helpers**: Template siap pakai untuk bot Telegram, WhatsApp, Discord, dan Website API.
+-   🔄 **Auto Retry**: Dukungan retry otomatis dengan exponential backoff untuk error transient.
+-   🔍 **Server Search**: Cari server berdasarkan nama dengan mudah.
 
 ## Instalasi
 
@@ -35,7 +37,12 @@ const ptero = createPtero({
   domain: "https://panel.anda.com",
   ptla: "ptla_xxx", // Application API Key (Admin)
   ptlc: "ptlc_xxx", // Client API Key (User)
-  debug: true       // Aktifkan log super lengkap
+  debug: true,      // Aktifkan log super lengkap
+  retry: {          // Aktifkan auto retry (opsional)
+    retries: 3,
+    baseDelay: 1000,
+    maxDelay: 10000
+  }
 });
 
 // Cek koneksi
@@ -59,6 +66,9 @@ const user = await ptero.smart.users.getOrCreate({
 });
 
 console.log(`User ID: ${user.id}`);
+
+// Cari user berdasarkan email
+const found = await ptero.application.users.find("user@example.com");
 ```
 
 ## Manajemen Server (Deploy Instan)
@@ -77,6 +87,9 @@ const server = await ptero.smart.servers.create({
 });
 
 console.log(`Server Identifier: ${server.identifier}`);
+
+// Cari server berdasarkan nama
+const servers = await ptero.application.servers.find("My Awesome Bot");
 ```
 
 ## Kontrol Server & Real-time
@@ -120,6 +133,23 @@ ws.on("stats", (data) => {
 });
 
 await ws.connect();
+```
+
+## Retry & Error Handling
+
+SDK mendukung retry otomatis untuk error transient (429, 502, 503, 504).
+
+```typescript
+const ptero = createPtero({
+  domain: "https://panel.anda.com",
+  ptla: "ptla_xxx",
+  retry: {
+    retries: 3,        // Jumlah retry
+    baseDelay: 1000,   // Delay awal (ms)
+    maxDelay: 10000,   // Delay maksimal (ms)
+    retryOn: [429, 502, 503, 504] // HTTP status untuk retry
+  }
+});
 ```
 
 ## Sistem Error & Logging Super Lengkap

@@ -10,14 +10,38 @@ export type HttpCoreConfig = {
   userAgent: string;
   fetcher: typeof fetch;
   debug?: boolean;
+  retry?: RetryConfig;
+};
+
+export type RetryConfig = {
+  retries?: number;
+  baseDelay?: number;
+  maxDelay?: number;
+  retryOn?: number[];
+};
+
+const DEFAULT_RETRY_CONFIG: Required<RetryConfig> = {
+  retries: 0,
+  baseDelay: 1000,
+  maxDelay: 10000,
+  retryOn: [429, 502, 503, 504]
 };
 
 export class HttpCore {
   private config: HttpCoreConfig;
+  private retryConfig: Required<RetryConfig>;
   readonly logger: PteroLogger;
 
   constructor(config: HttpCoreConfig) {
     this.config = config;
+    this.retryConfig = {
+      ...DEFAULT_RETRY_CONFIG,
+      ...config.retry,
+      retries: config.retry?.retries ?? DEFAULT_RETRY_CONFIG.retries,
+      baseDelay: config.retry?.baseDelay ?? DEFAULT_RETRY_CONFIG.baseDelay,
+      maxDelay: config.retry?.maxDelay ?? DEFAULT_RETRY_CONFIG.maxDelay,
+      retryOn: config.retry?.retryOn ?? DEFAULT_RETRY_CONFIG.retryOn
+    };
     this.logger = new PteroLogger(config.debug ?? true);
   }
 
@@ -29,6 +53,28 @@ export class HttpCore {
       throw err;
     }
 
+    let lastError: Error | undefined;
+    const maxAttempts = this.retryConfig.retries + 1;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await this.executeRequest<T>(options, key);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (error instanceof PteroError && this.retryConfig.retryOn.includes(error.status ?? 0) && attempt < maxAttempts) {
+          const delay = this.calculateDelay(attempt);
+          this.logger.warn(`Retry ${attempt}/${this.retryConfig.retries} setelah ${delay}ms (${error.code})`);
+          await sleep(delay);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw lastError ?? new Error("Request gagal setelah semua retry");
+  }
+
+  private async executeRequest<T = unknown>(options: PteroRequestOptions, key: string): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.config.timeout);
     const path = options.path.startsWith("/") ? options.path : `/${options.path}`;
@@ -89,6 +135,16 @@ export class HttpCore {
       clearTimeout(timer);
     }
   }
+
+  private calculateDelay(attempt: number): number {
+    const exponential = this.retryConfig.baseDelay * Math.pow(2, attempt - 1);
+    const jitter = Math.random() * this.retryConfig.baseDelay * 0.5;
+    return Math.min(exponential + jitter, this.retryConfig.maxDelay);
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function buildBody(body: unknown, contentType: "json" | "text"): BodyInit | undefined {
@@ -132,7 +188,7 @@ function buildStatusHint(status: number, api: "application" | "client"): string 
   if (status === 401 || status === 403) return api === "application" ? "Cek PTLA dan permission Application API." : "Cek PTLC dan permission Client API.";
   if (status === 404) return "Cek ID, endpoint, atau versi panel.";
   if (status === 422) return "Cek payload yang dikirim. Gunakan previewCreate atau dryRun untuk melihat payload final.";
-  if (status === 429) return "Terlalu banyak request. Kurangi frekuensi atau aktifkan queue di versi mendatang.";
+  if (status === 429) return "Terlalu banyak request. Kurangi frekuensi atau aktifkan retry.";
   if (status >= 500) return "Panel mengembalikan error server. Cek log panel atau Wings.";
   return undefined;
 }

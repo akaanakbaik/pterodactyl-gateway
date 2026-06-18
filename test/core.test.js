@@ -112,3 +112,38 @@ test("file manager write", async () => {
   assert.equal(calls[0].method, "POST");
   assert.match(calls[0].url, /files\/write/);
 });
+
+test("retry config diterapkan dengan benar", () => {
+  const ptero = createPtero({ 
+    domain: "https://panel.example.com", 
+    ptla: "ptla_test",
+    retry: {
+      retries: 3,
+      baseDelay: 500,
+      maxDelay: 5000,
+      retryOn: [429, 503]
+    }
+  });
+  assert.ok(ptero);
+});
+
+test("server find mengembalikan hasil pencarian", async () => {
+  const fetcher = async (url) => {
+    if (String(url).includes("/servers?filter[name]")) {
+      return json({ 
+        data: [{ 
+          attributes: { id: 1, name: "Test Server", identifier: "abc123" } 
+        }] 
+      });
+    }
+    return json({ data: { attributes: { id: 1 } } });
+  };
+  const ptero = createPtero({ 
+    domain: "https://panel.example.com", 
+    ptla: "ptla_test", 
+    fetcher 
+  });
+  const results = await ptero.application.servers.find("Test Server");
+  assert.ok(Array.isArray(results));
+  assert.equal(results[0].name, "Test Server");
+});

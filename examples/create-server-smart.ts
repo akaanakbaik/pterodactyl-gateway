@@ -19,8 +19,8 @@ const input = {
   }
 } as const;
 
-const preview = await ptero.servers.previewCreate(input);
+const preview = await ptero.smart.servers.preview(input);
 console.log(preview.payload);
 
-const dryRun = await ptero.servers.createSmart(input, { dryRun: true });
+const dryRun = await ptero.smart.servers.create(input, { dryRun: true });
 console.log(dryRun.payload);

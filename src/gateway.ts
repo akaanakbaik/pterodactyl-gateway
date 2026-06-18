@@ -1,5 +1,5 @@
 import { PteroError, ErrorFactory } from "./errors.js";
-import { HttpCore } from "./http.js";
+import { HttpCore, RetryConfig } from "./http.js";
 import { buildServerPayload, buildUserPayload, normalizeSpecs, normalizeUserResponse, progress, selectAllocations, validateCreateInput } from "./smart.js";
 import {
   ConnectResult,
@@ -35,7 +35,7 @@ export class PteroGateway {
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
     this.timeout = config.timeout ?? 15000;
-    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/1.1.0";
+    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/1.2.0";
     this.safeMode = config.safeMode ?? true;
     this.presets = config.presets ?? {
       mini: { memory: "512MB", disk: "1GB", cpu: 50, databases: 0, allocations: 1, backups: 0 },
@@ -51,7 +51,8 @@ export class PteroGateway {
       timeout: this.timeout,
       userAgent: this.userAgent,
       fetcher: config.fetcher ?? fetch,
-      debug: config.debug
+      debug: config.debug,
+      retry: config.retry
     });
   }
 
@@ -70,7 +71,8 @@ export class PteroGateway {
         get: (id: number) => this.request<any>({ api: "application", path: `/users/${id}` }),
         create: (data: any) => this.request<any>({ api: "application", method: "POST", path: "/users", body: data }),
         update: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/users/${id}`, body: data }),
-        delete: (id: number) => this.request<any>({ api: "application", method: "DELETE", path: `/users/${id}` })
+        delete: (id: number) => this.request<any>({ api: "application", method: "DELETE", path: `/users/${id}` }),
+        find: (email: string) => this.findUserByEmail(email)
       },
       nodes: {
         list: (page = 1) => this.request<any>({ api: "application", path: `/nodes?page=${page}` }),
@@ -85,6 +87,7 @@ export class PteroGateway {
       servers: {
         list: (page = 1) => this.request<any>({ api: "application", path: `/servers?page=${page}` }),
         get: (id: number) => this.request<any>({ api: "application", path: `/servers/${id}` }),
+        find: (query: string) => this.searchServers(query),
         create: (data: any) => this.request<any>({ api: "application", method: "POST", path: "/servers", body: data }),
         update: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/servers/${id}/details`, body: data }),
         updateBuild: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/servers/${id}/build`, body: data }),
@@ -177,6 +180,24 @@ export class PteroGateway {
     return { ok: checks.every(check => check.ok || check.name.endsWith("provided")), mode: connect.mode, checks };
   }
 
+  private async searchServers(query: string) {
+    const raw = await this.request<any>({ api: "application", path: `/servers?filter[name]=${encodeURIComponent(query)}` }).catch(() => undefined);
+    const data = Array.isArray(asObject(raw).data) ? asObject(raw).data as unknown[] : [];
+    return data.map(item => {
+      const attributes = getDataAttributes(item);
+      return { id: Number(attributes.id ?? 0), name: String(attributes.name ?? ""), identifier: String(attributes.identifier ?? ""), raw: item };
+    });
+  }
+
+  private async findUserByEmail(email: string) {
+    const raw = await this.request<any>({ api: "application", path: `/users?filter[email]=${encodeURIComponent(email)}` }).catch(() => undefined);
+    const data = Array.isArray(asObject(raw).data) ? asObject(raw).data as unknown[] : [];
+    const first = data[0];
+    if (!first) return undefined;
+    const attributes = getDataAttributes(first);
+    return { id: Number(attributes.id ?? 0), username: String(attributes.username ?? ""), email: String(attributes.email ?? email), raw: first };
+  }
+
   private async createUserSmart(input: CreateUserSmartInput, options?: OperationOptions) {
     this.logger.info(`Membuat user smart: ${input.email}`);
     progress(options, "validate", 10, "Memvalidasi user.");
@@ -196,15 +217,6 @@ export class PteroGateway {
       return { ...found, created: false };
     }
     return { ...(await this.createUserSmart(input, options)), created: true };
-  }
-
-  private async findUserByEmail(email: string) {
-    const raw = await this.request<any>({ api: "application", path: `/users?filter[email]=${encodeURIComponent(email)}` }).catch(() => undefined);
-    const data = Array.isArray(asObject(raw).data) ? asObject(raw).data as unknown[] : [];
-    const first = data[0];
-    if (!first) return undefined;
-    const attributes = asObject(asObject(first).attributes);
-    return { id: Number(attributes.id ?? 0), username: String(attributes.username ?? ""), email: String(attributes.email ?? email), raw: first };
   }
 
   private async resolveUserForServer(input: CreateSmartServerInput) {

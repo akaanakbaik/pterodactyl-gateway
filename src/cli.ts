@@ -10,7 +10,7 @@ const command = args[0] ?? "help";
 
 async function main() {
     if (command === "help" || command === "--help" || command === "-h") {
-      console.log("Pterodactyl Gateway CLI (v1.1.0)");
+      console.log("Pterodactyl Gateway CLI (v1.2.0)");
       console.log("Usage: ptero-gateway <command> [args]");
       console.log("Commands: doctor, servers, server");
       return;

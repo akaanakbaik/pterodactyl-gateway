@@ -10,6 +10,7 @@ export {
   getIntegrationKinds,
   getIntegrationDefaults
 } from "./integrations.js";
+export type { RetryConfig } from "./http.js";
 
 import { PteroGateway } from "./gateway.js";
 import { PteroConfig } from "./types.js";

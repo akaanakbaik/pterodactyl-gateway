@@ -21,6 +21,12 @@ export type PteroConfig = {
   debug?: boolean;
   fetcher?: typeof fetch;
   presets?: Record<string, ServerSpecsInput>;
+  retry?: {
+    retries?: number;
+    baseDelay?: number;
+    maxDelay?: number;
+    retryOn?: number[];
+  };
 };
 
 export type ConnectResult = {
