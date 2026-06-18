@@ -2,7 +2,7 @@
 
 **SDK TypeScript Modern untuk Integrasi Pterodactyl Panel yang Mudah, Lengkap, dan Real-time.**
 
-`@akaanakbaik/pterodactyl-gateway` · `v1.2.0` · `Node.js >=18` · `MIT`
+`@akaanakbaik/pterodactyl-gateway` · `v1.3.0` · `Node.js >=18` · `MIT`
 
 [**npm**](https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway) · [**GitHub**](https://github.com/akaanakbaik/pterodactyl-gateway)
 
@@ -19,6 +19,13 @@ Pterodactyl Gateway adalah SDK yang dirancang khusus untuk memudahkan developer 
 -   🤖 **Integration Helpers**: Template siap pakai untuk bot Telegram, WhatsApp, Discord, dan Website API.
 -   🔄 **Auto Retry**: Dukungan retry otomatis dengan exponential backoff untuk error transient.
 -   🔍 **Server Search**: Cari server berdasarkan nama dengan mudah.
+-   🎯 **Find Nest & Egg**: Cari nest/egg berdasarkan nama dengan error handling detail.
+-   ⚡ **Auto Defaults**: Auto-resolve port, nest, egg, startup, dan docker image.
+-   📊 **Update Specs**: Ubah spesifikasi server (RAM, CPU, Disk) dengan mudah.
+-   👤 **Change Ownership**: Pindahkan server ke user lain.
+-   🔄 **Change Nest/Egg**: Ubah nest dan egg server yang sudah ada.
+-   📋 **Server Details**: Ambil detail lengkap server dengan nama node, nest, egg, dan user.
+-   🚀 **Batch Operations**: Operasi batch untuk suspend, unsuspend, reinstall, atau delete multiple servers.
 
 ## Instalasi
 

@@ -147,3 +147,122 @@ test("server find mengembalikan hasil pencarian", async () => {
   assert.ok(Array.isArray(results));
   assert.equal(results[0].name, "Test Server");
 });
+
+test("findNestByName mengembalikan nest yang benar", async () => {
+  const fetcher = async (url) => {
+    if (String(url).includes("/nests")) {
+      return json({ 
+        data: [{ 
+          attributes: { id: 5, name: "Node.js", description: "Node.js eggs" } 
+        }] 
+      });
+    }
+    return json({ data: { attributes: { id: 1 } } });
+  };
+  const ptero = createPtero({ 
+    domain: "https://panel.example.com", 
+    ptla: "ptla_test", 
+    fetcher 
+  });
+  const nest = await ptero.application.nests.find("Node.js");
+  assert.equal(nest.id, 5);
+  assert.equal(nest.name, "Node.js");
+});
+
+test("findEggByName mengembalikan egg yang benar", async () => {
+  const fetcher = async (url) => {
+    if (String(url).includes("/nests/5/eggs")) {
+      return json({ 
+        data: [{ 
+          attributes: { id: 15, name: "Node.js" } 
+        }] 
+      });
+    }
+    return json({ data: { attributes: { id: 1 } } });
+  };
+  const ptero = createPtero({ 
+    domain: "https://panel.example.com", 
+    ptla: "ptla_test", 
+    fetcher 
+  });
+  const egg = await ptero.application.nests.eggs.find(5, "Node.js");
+  assert.equal(egg.id, 15);
+  assert.equal(egg.name, "Node.js");
+});
+
+test("findNestByName melempar error jika nest tidak ditemukan", async () => {
+  const fetcher = async () => json({ data: [] });
+  const ptero = createPtero({ 
+    domain: "https://panel.example.com", 
+    ptla: "ptla_test", 
+    fetcher 
+  });
+  try {
+    await ptero.application.nests.find("NonExistent");
+    assert.fail("Should throw");
+  } catch (e) {
+    assert.match(e.code, /NEST_NOT_FOUND/);
+  }
+});
+
+test("autoResolveDefaults mengembalikan defaults yang benar", async () => {
+  const fetcher = async (url) => {
+    const u = String(url);
+    if (u.includes("/nests?")) return json({ data: [{ attributes: { id: 5, name: "Node.js" } }] });
+    if (u.includes("/nests/5/eggs")) return json({ data: { attributes: { id: 15, name: "Node.js", startup: "node index.js", docker_images: { "18": "ghcr.io/pterodactyl/yolks:nodejs_18" } } } });
+    if (u.includes("/nodes/1/allocations")) return json({ data: [{ attributes: { id: 100, port: 25565, assigned: false } }] });
+    return json({ data: { attributes: { id: 1 } } });
+  };
+  const ptero = createPtero({ 
+    domain: "https://panel.example.com", 
+    ptla: "ptla_test", 
+    fetcher 
+  });
+  const defaults = await ptero.autoResolveDefaults(1);
+  assert.equal(defaults.nestId, 5);
+  assert.equal(defaults.eggId, 15);
+  assert.equal(defaults.startup, "node index.js");
+  assert.ok(defaults.dockerImage.includes("nodejs"));
+  assert.equal(defaults.allocationId, 100);
+});
+
+test("batchServerOperation menjalankan operasi batch", async () => {
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method });
+    return new Response(null, { status: 204 });
+  };
+  const ptero = createPtero({ 
+    domain: "https://panel.example.com", 
+    ptla: "ptla_test", 
+    fetcher 
+  });
+  const result = await ptero.batchServerOperation([1, 2, 3], "suspend");
+  assert.equal(result.total, 3);
+  assert.equal(result.success, 3);
+  assert.equal(result.failed, 0);
+});
+
+test("getServerDetails mengembalikan detail lengkap", async () => {
+  const fetcher = async (url) => {
+    const u = String(url);
+    if (u.includes("/servers/1")) return json({ data: { attributes: { id: 1, identifier: "abc123", name: "Test", node: 1, nest: 5, egg: 15, user: 100, container: { image: "test", startup_command: "node" }, limits: {}, feature_limits: {} } } });
+    if (u.includes("/nodes/1")) return json({ data: { attributes: { name: "Node1" } } });
+    if (u.includes("/nests/5/eggs/15")) return json({ data: { attributes: { name: "NodeJS Egg" } } });
+    if (u.includes("/nests/5")) return json({ data: { attributes: { name: "NodeJS" } } });
+    if (u.includes("/users/100")) return json({ data: { attributes: { username: "testuser" } } });
+    return json({ data: { attributes: { id: 1 } } });
+  };
+  const ptero = createPtero({ 
+    domain: "https://panel.example.com", 
+    ptla: "ptla_test", 
+    fetcher 
+  });
+  const details = await ptero.getServerDetails(1);
+  assert.equal(details.id, 1);
+  assert.equal(details.name, "Test");
+  assert.equal(details.nodeName, "Node1");
+  assert.equal(details.nestName, "NodeJS");
+  assert.equal(details.eggName, "NodeJS Egg");
+  assert.equal(details.userName, "testuser");
+});

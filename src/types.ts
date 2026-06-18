@@ -289,3 +289,30 @@ export interface PteroWebSocketAuth {
   token: string;
   socket: string;
 }
+
+export type UpdateServerSpecsInput = {
+  memory?: SizeInput;
+  disk?: SizeInput;
+  cpu?: CpuInput;
+  io?: number;
+  oomDisabled?: boolean;
+  databases?: number;
+  allocations?: number;
+  backups?: number;
+};
+
+export type ChangeServerOwnershipInput = {
+  userId?: number;
+  email?: string;
+  username?: string;
+  password?: string;
+};
+
+export type ChangeServerNestEggInput = {
+  nestId?: number;
+  nestName?: string;
+  eggId?: number;
+  eggName?: string;
+  dockerImage?: string;
+  startup?: string;
+};

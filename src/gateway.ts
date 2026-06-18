@@ -11,9 +11,12 @@ import {
   PreviewCreateServer,
   PteroConfig,
   PteroMode,
-  ServerPowerSignal
+  ServerPowerSignal,
+  UpdateServerSpecsInput,
+  ChangeServerOwnershipInput,
+  ChangeServerNestEggInput
 } from "./types.js";
-import { asObject, getCollection, getDataAttributes, maskSecret, normalizeDomain } from "./utils.js";
+import { asObject, getCollection, getDataAttributes, maskSecret, normalizeDomain, parseSizeToMiB, parseCpu } from "./utils.js";
 import { PteroWebSocket } from "./websocket.js";
 import { PteroLogger } from "./logger.js";
 
@@ -35,7 +38,7 @@ export class PteroGateway {
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
     this.timeout = config.timeout ?? 15000;
-    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/1.2.0";
+    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/1.3.0";
     this.safeMode = config.safeMode ?? true;
     this.presets = config.presets ?? {
       mini: { memory: "512MB", disk: "1GB", cpu: 50, databases: 0, allocations: 1, backups: 0 },
@@ -105,9 +108,11 @@ export class PteroGateway {
       nests: {
         list: (page = 1) => this.request<any>({ api: "application", path: `/nests?page=${page}` }),
         get: (id: number) => this.request<any>({ api: "application", path: `/nests/${id}` }),
+        find: (name: string) => this.findNestByName(name),
         eggs: {
           list: (nestId: number) => this.request<any>({ api: "application", path: `/nests/${nestId}/eggs` }),
-          get: (nestId: number, eggId: number) => this.request<any>({ api: "application", path: `/nests/${nestId}/eggs/${eggId}?include=variables` })
+          get: (nestId: number, eggId: number) => this.request<any>({ api: "application", path: `/nests/${nestId}/eggs/${eggId}?include=variables` }),
+          find: (nestId: number, name: string) => this.findEggByName(nestId, name)
         }
       }
     };
@@ -140,7 +145,10 @@ export class PteroGateway {
       servers: {
         preview: (input: CreateSmartServerInput, options?: OperationOptions) => this.previewCreateServer(input, options),
         create: (input: CreateSmartServerInput, options?: OperationOptions) => this.createServerSmart(input, options),
-        createFromPreset: (preset: string, input: Omit<CreateSmartServerInput, "preset" | "specs">, options?: OperationOptions) => this.createServerSmart({ ...input, preset }, options)
+        createFromPreset: (preset: string, input: Omit<CreateSmartServerInput, "preset" | "specs">, options?: OperationOptions) => this.createServerSmart({ ...input, preset }, options),
+        updateSpecs: (serverId: number, input: UpdateServerSpecsInput, options?: OperationOptions) => this.updateServerSpecs(serverId, input, options),
+        changeOwnership: (serverId: number, input: ChangeServerOwnershipInput, options?: OperationOptions) => this.changeServerOwnership(serverId, input, options),
+        changeNestEgg: (serverId: number, input: ChangeServerNestEggInput, options?: OperationOptions) => this.changeServerNestEgg(serverId, input, options)
       }
     };
   }
@@ -180,9 +188,309 @@ export class PteroGateway {
     return { ok: checks.every(check => check.ok || check.name.endsWith("provided")), mode: connect.mode, checks };
   }
 
+  async findNestByName(name: string) {
+    this.logger.info(`Mencari nest: ${name}`);
+    const raw = await this.request<any>({ api: "application", path: "/nests" }).catch(() => undefined);
+    const data = getCollection(raw);
+    const match = data.find(item => {
+      const attrs = getDataAttributes(item);
+      return String(attrs.name ?? "").toLowerCase() === name.toLowerCase();
+    });
+    if (match) {
+      const attrs = getDataAttributes(match);
+      return { id: Number(attrs.id ?? 0), name: String(attrs.name ?? ""), description: String(attrs.description ?? ""), raw: match };
+    }
+    const available = data.map(item => {
+      const attrs = getDataAttributes(item);
+      return `  ID: ${attrs.id} | Nama: ${attrs.name}`;
+    }).join("\n");
+    throw new PteroError({
+      code: "NEST_NOT_FOUND",
+      message: `Nest dengan nama '${name}' tidak ditemukan.`,
+      hint: `Nest yang tersedia:\n${available || "  Tidak ada nest"}`,
+      steps: ["Cek nama nest di panel admin", "Gunakan nest ID langsung jika nama tidak ditemukan"]
+    });
+  }
+
+  async findEggByName(nestId: number, name: string) {
+    this.logger.info(`Mencari egg '${name}' di nest ${nestId}...`);
+    const raw = await this.application.nests.eggs.list(nestId).catch(() => undefined);
+    const data = getCollection(raw);
+    const match = data.find(item => {
+      const attrs = getDataAttributes(item);
+      return String(attrs.name ?? "").toLowerCase() === name.toLowerCase();
+    });
+    if (match) {
+      const attrs = getDataAttributes(match);
+      return { id: Number(attrs.id ?? 0), name: String(attrs.name ?? ""), nestId, raw: match };
+    }
+    const available = data.map(item => {
+      const attrs = getDataAttributes(item);
+      return `  ID: ${attrs.id} | Nama: ${attrs.name}`;
+    }).join("\n");
+    throw new PteroError({
+      code: "EGG_NOT_FOUND",
+      message: `Egg dengan nama '${name}' tidak ditemukan di nest ${nestId}.`,
+      hint: `Egg yang tersedia di nest ${nestId}:\n${available || "  Tidak ada egg"}`,
+      steps: ["Cek nama egg di panel admin", "Gunakan egg ID langsung jika nama tidak ditemukan"]
+    });
+  }
+
+  async findNestAndEgg(nestName?: string, eggName?: string, defaultNestId = 5, defaultEggId = 15) {
+    let nestId = defaultNestId;
+    let eggId = defaultEggId;
+    let nestName2: string | undefined;
+    let eggName2: string | undefined;
+
+    if (nestName) {
+      try {
+        const nest = await this.findNestByName(nestName);
+        nestId = nest.id;
+        nestName2 = nest.name;
+      } catch (error) {
+        this.logger.warn(`Nest '${nestName}' tidak ditemukan, menggunakan default ID ${defaultNestId}`);
+        try {
+          await this.application.nests.get(defaultNestId);
+        } catch {
+          nestId = 1;
+          this.logger.warn(`Nest ID ${defaultNestId} tidak ada, fallback ke ID 1`);
+        }
+      }
+    } else {
+      try {
+        await this.application.nests.get(nestId);
+      } catch {
+        nestId = 1;
+        this.logger.warn(`Nest ID ${defaultNestId} tidak ada, fallback ke ID 1`);
+      }
+    }
+
+    if (eggName) {
+      try {
+        const egg = await this.findEggByName(nestId, eggName);
+        eggId = egg.id;
+        eggName2 = egg.name;
+      } catch (error) {
+        this.logger.warn(`Egg '${eggName}' tidak ditemukan di nest ${nestId}, menggunakan default ID ${defaultEggId}`);
+        try {
+          await this.application.nests.eggs.get(nestId, defaultEggId);
+        } catch {
+          eggId = 1;
+          this.logger.warn(`Egg ID ${defaultEggId} tidak ada di nest ${nestId}, fallback ke ID 1`);
+        }
+      }
+    } else {
+      try {
+        await this.application.nests.eggs.get(nestId, eggId);
+      } catch {
+        eggId = 1;
+        this.logger.warn(`Egg ID ${defaultEggId} tidak ada di nest ${nestId}, fallback ke ID 1`);
+      }
+    }
+
+    return { nestId, eggId, nestName: nestName2, eggName: eggName2 };
+  }
+
+  async autoResolveDefaults(nodeId: number, options?: { defaultNestId?: number; defaultEggId?: number }) {
+    this.logger.info(`Auto-resolving defaults untuk node ${nodeId}...`);
+    const { nestId, eggId } = await this.findNestAndEgg(undefined, undefined, options?.defaultNestId ?? 5, options?.defaultEggId ?? 15);
+    
+    const rawEgg = await this.application.nests.eggs.get(nestId, eggId);
+    const eggAttr = getDataAttributes(rawEgg);
+    
+    const startup = String(eggAttr.startup ?? "node index.js");
+    const dockerImages = asObject(eggAttr.docker_images);
+    const dockerImage = Object.values(dockerImages).find(v => typeof v === "string") as string || String(eggAttr.docker_image ?? "ghcr.io/pterodactyl/yolks:nodejs_18");
+    
+    const rawAllocations = await this.application.nodes.allocations.list(nodeId);
+    const freeAllocations = getCollection(rawAllocations).filter(item => {
+      const attrs = getDataAttributes(item);
+      return !attrs.assigned;
+    });
+    
+    if (freeAllocations.length === 0) throw ErrorFactory.noFreeAllocation(nodeId);
+    
+    const defaultAlloc = getDataAttributes(freeAllocations[0]);
+    const allocationId = Number(defaultAlloc.id ?? 0);
+    
+    return { nestId, eggId, startup, dockerImage, allocationId };
+  }
+
+  private async updateServerSpecs(serverId: number, input: UpdateServerSpecsInput, options?: OperationOptions) {
+    this.logger.info(`Mengupdate specs server ${serverId}...`);
+    progress(options, "validate", 10, "Memvalidasi input.");
+    
+    const limits: Record<string, unknown> = {};
+    if (input.memory !== undefined) limits.memory = parseSizeToMiB(input.memory);
+    if (input.disk !== undefined) limits.disk = parseSizeToMiB(input.disk);
+    if (input.cpu !== undefined) limits.cpu = parseCpu(input.cpu);
+    if (input.io !== undefined) limits.io = input.io;
+    if (input.oomDisabled !== undefined) limits.oom_disabled = input.oomDisabled;
+    
+    const featureLimits: Record<string, number> = {};
+    if (input.databases !== undefined) featureLimits.databases = input.databases;
+    if (input.allocations !== undefined) featureLimits.allocations = input.allocations;
+    if (input.backups !== undefined) featureLimits.backups = input.backups;
+    
+    progress(options, "request", 50, "Mengirim update ke panel.");
+    
+    const buildData: Record<string, unknown> = {};
+    if (Object.keys(limits).length > 0) buildData.limits = limits;
+    if (Object.keys(featureLimits).length > 0) buildData.feature_limits = featureLimits;
+    
+    if (Object.keys(buildData).length > 0) {
+      await this.application.servers.updateBuild(serverId, buildData);
+    }
+    
+    progress(options, "done", 100, "Specs server berhasil diupdate.");
+    return { ok: true, serverId, updated: { ...limits, ...featureLimits } };
+  }
+
+  private async changeServerOwnership(serverId: number, input: ChangeServerOwnershipInput, options?: OperationOptions) {
+    this.logger.info(`Mengubah kepemilikan server ${serverId}...`);
+    progress(options, "resolve", 20, "Menyinkronkan user tujuan.");
+    
+    let targetUserId = input.userId;
+    if (!targetUserId && input.email) {
+      const user = await this.getOrCreateUser({
+        username: input.username || input.email.split("@")[0] || "user",
+        email: input.email,
+        password: input.password ?? "auto",
+        administrator: false
+      });
+      targetUserId = "id" in user ? user.id : undefined;
+    }
+    
+    if (!targetUserId) throw new PteroError({ code: "USER_REQUIRED", message: "userId atau email wajib diisi." });
+    
+    progress(options, "request", 60, "Mengirim update ke panel.");
+    await this.application.servers.update(serverId, { user: targetUserId });
+    
+    progress(options, "done", 100, "Kepemilikan server berhasil diubah.");
+    return { ok: true, serverId, newOwnerId: targetUserId };
+  }
+
+  private async changeServerNestEgg(serverId: number, input: ChangeServerNestEggInput, options?: OperationOptions) {
+    this.logger.info(`Mengubah nest/egg server ${serverId}...`);
+    progress(options, "resolve", 20, "Menyinkronkan nest dan egg.");
+    
+    let nestId = input.nestId ?? 5;
+    let eggId = input.eggId ?? 15;
+    
+    if (input.nestName || input.eggName) {
+      const resolved = await this.findNestAndEgg(input.nestName, input.eggName, nestId, eggId);
+      nestId = resolved.nestId;
+      eggId = resolved.eggId;
+    }
+    
+    const rawEgg = await this.application.nests.eggs.get(nestId, eggId);
+    const eggAttr = getDataAttributes(rawEgg);
+    
+    const dockerImages = asObject(eggAttr.docker_images);
+    const dockerImage = input.dockerImage || Object.values(dockerImages).find(v => typeof v === "string") as string || String(eggAttr.docker_image ?? "");
+    const startup = input.startup || String(eggAttr.startup ?? "");
+    
+    progress(options, "request", 60, "Mengirim update ke panel.");
+    
+    await this.application.servers.updateStartup(serverId, {
+      egg: eggId,
+      startup
+    });
+    
+    if (dockerImage) {
+      await this.application.servers.update(serverId, { docker_image: dockerImage });
+    }
+    
+    progress(options, "done", 100, "Nest dan egg server berhasil diubah.");
+    return { ok: true, serverId, nestId, eggId, dockerImage, startup };
+  }
+
+  async getServerDetails(serverId: number) {
+    this.logger.info(`Mengambil detail server ${serverId}...`);
+    const raw = await this.application.servers.get(serverId);
+    const attrs = getDataAttributes(raw);
+    
+    const nodeId = Number(attrs.node ?? 0);
+    const nestId = Number(attrs.nest ?? 0);
+    const eggId = Number(attrs.egg ?? 0);
+    const userId = Number(attrs.user ?? 0);
+    
+    let nodeName = "";
+    let nestName = "";
+    let eggName = "";
+    let userName = "";
+    
+    try {
+      const node = await this.application.nodes.get(nodeId);
+      nodeName = String(getDataAttributes(node).name ?? "");
+    } catch {}
+    
+    try {
+      const nest = await this.application.nests.get(nestId);
+      nestName = String(getDataAttributes(nest).name ?? "");
+    } catch {}
+    
+    try {
+      const egg = await this.application.nests.eggs.get(nestId, eggId);
+      eggName = String(getDataAttributes(egg).name ?? "");
+    } catch {}
+    
+    try {
+      const user = await this.application.users.get(userId);
+      userName = String(getDataAttributes(user).username ?? "");
+    } catch {}
+    
+    return {
+      id: Number(attrs.id ?? 0),
+      identifier: String(attrs.identifier ?? ""),
+      uuid: String(attrs.uuid ?? ""),
+      name: String(attrs.name ?? ""),
+      description: String(attrs.description ?? ""),
+      status: String(attrs.status ?? ""),
+      suspended: Boolean(attrs.suspended),
+      nodeId,
+      nodeName,
+      nestId,
+      nestName,
+      eggId,
+      eggName,
+      userId,
+      userName,
+      limits: attrs.limits,
+      featureLimits: attrs.feature_limits,
+      dockerImage: attrs.container ? String((attrs.container as any).image ?? "") : "",
+      startup: attrs.container ? String((attrs.container as any).startup_command ?? "") : "",
+      createdAt: String(attrs.created_at ?? ""),
+      updatedAt: String(attrs.updated_at ?? ""),
+      raw
+    };
+  }
+
+  async batchServerOperation(serverIds: number[], operation: "suspend" | "unsuspend" | "reinstall" | "delete", options?: { force?: boolean }) {
+    this.logger.info(`Batch ${operation} untuk ${serverIds.length} server...`);
+    const results: Array<{ serverId: number; ok: boolean; error?: string }> = [];
+    
+    for (const serverId of serverIds) {
+      try {
+        if (operation === "suspend") await this.application.servers.suspend(serverId);
+        else if (operation === "unsuspend") await this.application.servers.unsuspend(serverId);
+        else if (operation === "reinstall") await this.application.servers.reinstall(serverId);
+        else if (operation === "delete") await this.application.servers.delete(serverId, options?.force);
+        results.push({ serverId, ok: true });
+        this.logger.success(`Server ${serverId} ${operation} OK`);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        results.push({ serverId, ok: false, error: msg });
+        this.logger.error(`Server ${serverId} ${operation} gagal: ${msg}`);
+      }
+    }
+    
+    return { operation, total: serverIds.length, success: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results };
+  }
+
   private async searchServers(query: string) {
     const raw = await this.request<any>({ api: "application", path: `/servers?filter[name]=${encodeURIComponent(query)}` }).catch(() => undefined);
-    const data = Array.isArray(asObject(raw).data) ? asObject(raw).data as unknown[] : [];
+    const data = getCollection(raw);
     return data.map(item => {
       const attributes = getDataAttributes(item);
       return { id: Number(attributes.id ?? 0), name: String(attributes.name ?? ""), identifier: String(attributes.identifier ?? ""), raw: item };
@@ -191,7 +499,7 @@ export class PteroGateway {
 
   private async findUserByEmail(email: string) {
     const raw = await this.request<any>({ api: "application", path: `/users?filter[email]=${encodeURIComponent(email)}` }).catch(() => undefined);
-    const data = Array.isArray(asObject(raw).data) ? asObject(raw).data as unknown[] : [];
+    const data = getCollection(raw);
     const first = data[0];
     if (!first) return undefined;
     const attributes = getDataAttributes(first);

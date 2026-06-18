@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 1.3.0 (2026-06-18)
+
+### Fitur Baru
+
+- **findNestAndEgg**: Cari nest dan egg berdasarkan nama dengan error handling detail yang menampilkan ID yang tersedia.
+- **autoResolveDefaults**: Auto-resolve nest (default ID 5, fallback ke 1), egg (default ID 15, fallback ke 1), port allocation, startup command, dan docker image dari egg.
+- **updateServerSpecs**: Ubah spesifikasi server (RAM, CPU, Disk, IO, OOM, databases, allocations, backups).
+- **changeServerOwnership**: Pindahkan server ke user lain berdasarkan userId atau email.
+- **changeServerNestEgg**: Ubah nest dan egg server, termasuk docker image dan startup command.
+- **getServerDetails**: Ambil detail lengkap server termasuk nama node, nest, egg, dan user.
+- **batchServerOperation**: Operasi batch untuk suspend, unsuspend, reinstall, atau delete beberapa server sekaligus.
+- **findNestByName**: Cari nest berdasarkan nama dengan daftar nest yang tersedia jika tidak ditemukan.
+- **findEggByName**: Cari egg berdasarkan nama di nest tertentu dengan daftar egg yang tersedia.
+- **application.nests.find**: Cari nest berdasarkan nama.
+- **application.nests.eggs.find**: Cari egg berdasarkan nama di nest tertentu.
+
+### Perubahan
+
+- Update version ke v1.3.0
+- Export type UpdateServerSpecsInput, ChangeServerOwnershipInput, ChangeServerNestEggInput
+
 ## 1.2.0 (2026-06-18)
 
 ### Fitur Baru
@@ -8,33 +29,12 @@
 - **Server Search**: Tambahkan `application.servers.find(query)` untuk mencari server berdasarkan nama.
 - **User Find**: Tambahkan `application.users.find(email)` untuk mencari user berdasarkan email.
 - **Retry Config**: Konfigurasi retry fleksibel via `PteroConfig.retry` (retries, baseDelay, maxDelay, retryOn).
-- **Batch Operations**: Mendukung operasi bulk untuk manajemen server dan user dalam jumlah besar.
-
-### Perubahan
-
-- **Version Bump**: Update version ke v1.2.0.
-- **Error Handling**: Peningkatan penanganan error dengan retry logic yang lebih robust.
-- **Performance**: Optimasi request handling untuk operasi yang membutuhkan banyak API call.
-
-### Perbaikan Bug
-
-- Fix example `create-server-smart.ts` yang menggunakan API method yang salah.
-- Fix WebSocket reconnect handling.
 
 ## 1.1.0 (2026-05-30)
 
 ### Fitur Baru
 
 - **SDK-Centric Architecture**: Repositori direstrukturisasi untuk fokus pada SDK TypeScript yang komprehensif.
-- **Modular Application & Client API**: Pemisahan yang jelas antara Application API (Admin) dan Client API (User) untuk manajemen Pterodactyl.
-- **WebSocket Integration**: Menambahkan dukungan WebSocket untuk koneksi real-time ke konsol server dan statistik.
-- **Improved Developer Experience**: Peningkatan tipe TypeScript, API yang lebih intuitif, dan penanganan error yang lebih baik.
-
-### Perubahan
-
-- **Pemisahan CLI**: Logika CLI dipisahkan dari core SDK untuk menjaga ukuran package tetap ringan.
-- **Update Dependencies**: Memperbarui dependensi dan versi Node.js minimum ke `^18.0.0`.
-
-### Perbaikan Bug
-
-- Berbagai perbaikan bug kecil dan peningkatan stabilitas.
+- **Modular Application & Client API**: Pemisahan yang jelas antara Application API (Admin) dan Client API (User).
+- **WebSocket Integration**: Dukungan WebSocket untuk koneksi real-time.
+- **Improved Developer Experience**: Peningkatan tipe TypeScript, API yang lebih intuitif.
