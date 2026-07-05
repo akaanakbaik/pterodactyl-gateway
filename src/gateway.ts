@@ -16,7 +16,7 @@ import {
   ChangeServerOwnershipInput,
   ChangeServerNestEggInput
 } from "./types.js";
-import { asObject, getCollection, getDataAttributes, maskSecret, normalizeDomain, parseSizeToMiB, parseCpu } from "./utils.js";
+import { asObject, getCollection, getDataAttributes, maskSecret, normalizeDomain, parseSizeToMiB, parseCpu, toBoolean, ensureNonNegativeInteger } from "./utils.js";
 import { PteroWebSocket } from "./websocket.js";
 import { PteroLogger } from "./logger.js";
 
@@ -320,30 +320,46 @@ export class PteroGateway {
     this.logger.info(`Mengupdate specs server ${serverId}...`);
     progress(options, "validate", 10, "Memvalidasi input.");
     
-    const limits: Record<string, unknown> = {};
-    if (input.memory !== undefined) limits.memory = parseSizeToMiB(input.memory);
-    if (input.disk !== undefined) limits.disk = parseSizeToMiB(input.disk);
-    if (input.cpu !== undefined) limits.cpu = parseCpu(input.cpu);
-    if (input.io !== undefined) limits.io = input.io;
-    if (input.oomDisabled !== undefined) limits.oom_disabled = input.oomDisabled;
+    const raw = await this.application.servers.get(serverId);
+    const attrs = getDataAttributes(raw);
+    const currentLimits = asObject(attrs.limits);
+    const currentFeatureLimits = asObject(attrs.feature_limits);
+    const currentAllocation = attrs.allocation;
     
-    const featureLimits: Record<string, number> = {};
-    if (input.databases !== undefined) featureLimits.databases = input.databases;
-    if (input.allocations !== undefined) featureLimits.allocations = input.allocations;
-    if (input.backups !== undefined) featureLimits.backups = input.backups;
+    const memory = input.memory !== undefined ? parseSizeToMiB(input.memory) : currentLimits.memory;
+    const disk = input.disk !== undefined ? parseSizeToMiB(input.disk) : currentLimits.disk;
+    const cpu = input.cpu !== undefined ? parseCpu(input.cpu) : currentLimits.cpu;
+    const swap = input.swap !== undefined ? parseSizeToMiB(input.swap) : (currentLimits.swap ?? 0);
+    const io = input.io !== undefined ? ensureNonNegativeInteger(input.io, "io") : (currentLimits.io ?? 500);
+    const threads = input.cpuPinning !== undefined ? (input.cpuPinning?.trim() ? input.cpuPinning.trim() : null) : (currentLimits.threads ?? null);
+    const oomDisabled = input.oomDisabled !== undefined ? toBoolean(input.oomDisabled) : (currentLimits.oom_disabled ?? false);
+    
+    const databases = input.databases !== undefined ? ensureNonNegativeInteger(input.databases, "databases") : currentFeatureLimits.databases;
+    const allocations = input.allocations !== undefined ? ensureNonNegativeInteger(input.allocations, "allocations") : currentFeatureLimits.allocations;
+    const backups = input.backups !== undefined ? ensureNonNegativeInteger(input.backups, "backups") : currentFeatureLimits.backups;
     
     progress(options, "request", 50, "Mengirim update ke panel.");
     
-    const buildData: Record<string, unknown> = {};
-    if (Object.keys(limits).length > 0) buildData.limits = limits;
-    if (Object.keys(featureLimits).length > 0) buildData.feature_limits = featureLimits;
+    const buildData = {
+      allocation: currentAllocation,
+      memory,
+      swap,
+      disk,
+      io,
+      cpu,
+      threads,
+      oom_disabled: oomDisabled,
+      feature_limits: {
+        databases,
+        allocations,
+        backups
+      }
+    };
     
-    if (Object.keys(buildData).length > 0) {
-      await this.application.servers.updateBuild(serverId, buildData);
-    }
+    await this.application.servers.updateBuild(serverId, buildData);
     
     progress(options, "done", 100, "Specs server berhasil diupdate.");
-    return { ok: true, serverId, updated: { ...limits, ...featureLimits } };
+    return { ok: true, serverId, updated: { memory, swap, disk, io, cpu, threads, oomDisabled, ...buildData.feature_limits } };
   }
 
   private async changeServerOwnership(serverId: number, input: ChangeServerOwnershipInput, options?: OperationOptions) {
@@ -364,7 +380,16 @@ export class PteroGateway {
     if (!targetUserId) throw new PteroError({ code: "USER_REQUIRED", message: "userId atau email wajib diisi." });
     
     progress(options, "request", 60, "Mengirim update ke panel.");
-    await this.application.servers.update(serverId, { user: targetUserId });
+    
+    const raw = await this.application.servers.get(serverId);
+    const attrs = getDataAttributes(raw);
+    
+    await this.application.servers.update(serverId, {
+      user: targetUserId,
+      name: attrs.name,
+      description: attrs.description,
+      external_id: attrs.external_id
+    });
     
     progress(options, "done", 100, "Kepemilikan server berhasil diubah.");
     return { ok: true, serverId, newOwnerId: targetUserId };
@@ -394,12 +419,9 @@ export class PteroGateway {
     
     await this.application.servers.updateStartup(serverId, {
       egg: eggId,
-      startup
+      startup,
+      docker_image: dockerImage
     });
-    
-    if (dockerImage) {
-      await this.application.servers.update(serverId, { docker_image: dockerImage });
-    }
     
     progress(options, "done", 100, "Nest dan egg server berhasil diubah.");
     return { ok: true, serverId, nestId, eggId, dockerImage, startup };

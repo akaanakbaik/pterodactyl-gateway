@@ -294,6 +294,8 @@ export type UpdateServerSpecsInput = {
   memory?: SizeInput;
   disk?: SizeInput;
   cpu?: CpuInput;
+  cpuPinning?: string;
+  swap?: SizeInput;
   io?: number;
   oomDisabled?: boolean;
   databases?: number;
