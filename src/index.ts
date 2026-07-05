@@ -1,4 +1,4 @@
-export { PteroGateway } from "./gateway.js";
+export { PteroGateway, PteroScheduleBuilder } from "./gateway.js";
 export { PteroWebSocket } from "./websocket.js";
 export { PteroLogger } from "./logger.js";
 export { PteroError, explainError } from "./errors.js";

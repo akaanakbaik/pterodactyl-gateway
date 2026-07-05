@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import { execSync } from "node:child_process";
 import { PteroError, ErrorFactory } from "./errors.js";
 import { HttpCore, RetryConfig } from "./http.js";
 import { buildServerPayload, buildUserPayload, normalizeSpecs, normalizeUserResponse, progress, selectAllocations, validateCreateInput } from "./smart.js";
@@ -441,6 +443,7 @@ export class PteroGateway {
     let nestName = "";
     let eggName = "";
     let userName = "";
+    let userEmail = "";
     
     try {
       const node = await this.application.nodes.get(nodeId);
@@ -459,7 +462,9 @@ export class PteroGateway {
     
     try {
       const user = await this.application.users.get(userId);
-      userName = String(getDataAttributes(user).username ?? "");
+      const userAttrs = getDataAttributes(user);
+      userName = String(userAttrs.username ?? "");
+      userEmail = String(userAttrs.email ?? "");
     } catch {}
     
     return {
@@ -478,6 +483,7 @@ export class PteroGateway {
       eggName,
       userId,
       userName,
+      userEmail,
       limits: attrs.limits,
       featureLimits: attrs.feature_limits,
       dockerImage: attrs.container ? String((attrs.container as any).image ?? "") : "",
@@ -508,6 +514,152 @@ export class PteroGateway {
     }
     
     return { operation, total: serverIds.length, success: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results };
+  }
+
+  async exportAndEmailBackup(serverId: number, targetEmail?: string) {
+    this.logger.info(`Memulai auto-backup dan email untuk server ID ${serverId}...`);
+    let smtp;
+    try {
+      smtp = getPteroSmtpConfig();
+    } catch (err: any) {
+      throw new Error(`Gagal memuat konfigurasi SMTP: ${err.message}`);
+    }
+    const details = await this.getServerDetails(serverId);
+    const serverName = details.name;
+    const identifier = details.identifier;
+    const userEmail = targetEmail || details.userEmail;
+    if (!userEmail) {
+      throw new Error(`Email penerima tidak ditemukan untuk server ${serverName} (User ID ${details.userId})`);
+    }
+    const serverHandle = this.server(identifier);
+    const defaultIgnored = ["node_modules", "vendor", "cache", "tmp", "temp", ".git", ".cache", "bower_components"];
+    const ignoredStr = defaultIgnored.join("\n");
+    this.logger.info(`Membuat backup panel untuk ${serverName}...`);
+    const backupRes = await serverHandle.backups.create(`auto-backup-${identifier}-${Date.now()}`, ignoredStr);
+    const backupUuid = backupRes.attributes.uuid;
+    this.logger.info(`Menunggu backup selesai...`);
+    let isSuccessful = false;
+    let backupDetail;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      backupDetail = await serverHandle.backups.get(backupUuid);
+      if (backupDetail.attributes.is_successful) {
+        isSuccessful = true;
+        break;
+      }
+    }
+    if (!isSuccessful) {
+      throw new Error(`Pembuatan backup panel untuk ${serverName} timeout atau gagal.`);
+    }
+    this.logger.info(`Mengunduh file backup...`);
+    const downloadRes = await serverHandle.backups.download(backupUuid);
+    const downloadUrl = downloadRes.attributes.url;
+    const response = await fetch(downloadUrl);
+    if (!response.ok) {
+      throw new Error(`Gagal mengunduh file backup dari URL: ${downloadUrl}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const tempDir = "/tmp";
+    const tarPath = `${tempDir}/backup-${backupUuid}.tar.gz`;
+    const extractDir = `${tempDir}/extract-${backupUuid}`;
+    const zipPath = `${tempDir}/backup-${backupUuid}.zip`;
+    fs.writeFileSync(tarPath, buffer);
+    this.logger.info(`Mengonversi backup ke format .zip...`);
+    try {
+      fs.mkdirSync(extractDir, { recursive: true });
+      execSync(`tar -xzf ${tarPath} -C ${extractDir}`);
+      fs.writeFileSync(`${extractDir}/backup_info.txt`, `Backup created automatically by Akadev Pterodactyl Gateway\nServer Name: ${serverName}\nServer ID: ${identifier}\nBackup Date: ${new Date().toISOString()}`);
+      execSync(`cd ${extractDir} && zip -q -r ${zipPath} .`);
+    } catch (err: any) {
+      cleanupLocalFiles(tarPath, extractDir, zipPath);
+      throw new Error(`Gagal mengonversi file backup ke zip: ${err.message}`);
+    }
+    let zipStats;
+    try {
+      zipStats = fs.statSync(zipPath);
+    } catch (err: any) {
+      cleanupLocalFiles(tarPath, extractDir, zipPath);
+      throw new Error(`Gagal mengakses file zip yang dihasilkan: ${err.message}`);
+    }
+    const zipSizeBytes = zipStats.size;
+    const zipSizeFormatted = (zipSizeBytes / (1024 * 1024)).toFixed(2) + " MB";
+    const zipFileName = `${serverName.replace(/[^a-zA-Z0-9]/g, "_")}_backup.zip`;
+    this.logger.info(`Mengirim email backup ke ${userEmail}...`);
+    try {
+      const nodemailer = await import("nodemailer");
+      const transporter = nodemailer.default.createTransport({
+        host: smtp.host,
+        port: smtp.port,
+        secure: smtp.port === 465,
+        auth: {
+          user: smtp.username,
+          pass: smtp.password
+        },
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+      const mailOptions = {
+        from: `"${smtp.fromName}" <${smtp.fromAddress}>`,
+        to: userEmail,
+        subject: `Backup Server Pterodactyl: ${serverName}`,
+        text: `Data Backup Server:\nNama Server: ${serverName}\nServer ID: ${identifier}\nNama File: ${zipFileName}\nUkuran: ${zipSizeFormatted}\nFormat: ZIP Archive`,
+        html: `<h3>Data Backup Server</h3>\n<table border="1" cellpadding="5" style="border-collapse: collapse;">\n  <tr><td><b>Nama Server</b></td><td>${serverName}</td></tr>\n  <tr><td><b>Server ID</b></td><td>${identifier}</td></tr>\n  <tr><td><b>Nama File</b></td><td>${zipFileName}</td></tr>\n  <tr><td><b>Ukuran</b></td><td>${zipSizeFormatted}</td></tr>\n  <tr><td><b>Format</b></td><td>ZIP Archive</td></tr>\n</table>`,
+        attachments: [
+          {
+            filename: zipFileName,
+            path: zipPath
+          }
+        ]
+      };
+      await transporter.sendMail(mailOptions);
+      this.logger.success(`Email backup server ${serverName} berhasil terkirim ke ${userEmail}.`);
+    } catch (err: any) {
+      cleanupLocalFiles(tarPath, extractDir, zipPath);
+      throw new Error(`Gagal mengirim email SMTP: ${err.message}`);
+    }
+    cleanupLocalFiles(tarPath, extractDir, zipPath);
+    try {
+      this.logger.info(`Menghapus file backup di panel...`);
+      await serverHandle.backups.delete(backupUuid);
+    } catch (err: any) {
+      this.logger.warn(`Gagal menghapus backup di panel: ${err.message}`);
+    }
+    return {
+      success: true,
+      serverName,
+      email: userEmail,
+      fileName: zipFileName,
+      size: zipSizeFormatted
+    };
+  }
+
+  async backupAndEmailUserServers(userId: number) {
+    this.logger.info(`Mencari server untuk User ID ${userId}...`);
+    const listRes = await this.application.servers.list();
+    const data = getCollection(listRes);
+    const userServers = data.filter(server => {
+      const attrs = getDataAttributes(server);
+      return Number(attrs.user) === userId;
+    });
+    if (userServers.length === 0) {
+      throw new Error(`Tidak ditemukan server untuk User ID ${userId}`);
+    }
+    this.logger.info(`Ditemukan ${userServers.length} server untuk User ID ${userId}. Memulai proses pengiriman backup terpisah...`);
+    const results = [];
+    for (const server of userServers) {
+      const attrs = getDataAttributes(server);
+      const serverId = Number(attrs.id);
+      try {
+        const res = await this.exportAndEmailBackup(serverId);
+        results.push({ serverId, success: true, details: res });
+      } catch (err: any) {
+        this.logger.error(`Gagal mencadangkan server ID ${serverId}: ${err.message}`);
+        results.push({ serverId, success: false, error: err.message });
+      }
+    }
+    return results;
   }
 
   private async searchServers(query: string) {
@@ -731,4 +883,150 @@ export class PteroServerHandle {
     this.gateway.logger.info(`Mengirim command ke server ${this.identifier}: ${command}`);
     return this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/command`, body: { command } });
   }
+
+  createScheduleBuilder() {
+    return new PteroScheduleBuilder(this);
+  }
+}
+
+export class PteroScheduleBuilder {
+  private handle: any;
+  private name: string = "";
+  private isActive: boolean = true;
+  private cronConfig = {
+    minute: "*",
+    hour: "*",
+    day_of_month: "*",
+    month: "*",
+    day_of_week: "*"
+  };
+  private onlyWhenOnline: boolean = false;
+  private tasksList: Array<{
+    action: "power" | "command" | "backup";
+    payload: string;
+    timeOffset: number;
+    continueOnFailure: boolean;
+  }> = [];
+
+  constructor(serverHandle: any) {
+    this.handle = serverHandle;
+  }
+
+  setName(name: string) {
+    this.name = name;
+    return this;
+  }
+
+  setActive(active: boolean) {
+    this.isActive = active;
+    return this;
+  }
+
+  setCron(cronStr: string) {
+    const parts = cronStr.split(/\s+/);
+    if (parts.length === 5) {
+      this.cronConfig = {
+        minute: parts[0]!,
+        hour: parts[1]!,
+        day_of_month: parts[2]!,
+        month: parts[3]!,
+        day_of_week: parts[4]!
+      };
+    }
+    return this;
+  }
+
+  setCronDetails(minute: string, hour: string, dayOfMonth: string, month: string, dayOfWeek: string) {
+    this.cronConfig = { minute, hour, day_of_month: dayOfMonth, month, day_of_week: dayOfWeek };
+    return this;
+  }
+
+  setOnlyWhenOnline(value: boolean) {
+    this.onlyWhenOnline = value;
+    return this;
+  }
+
+  addTask(action: "power" | "command" | "backup", payload: string, timeOffset = 0, continueOnFailure = false) {
+    this.tasksList.push({ action, payload, timeOffset, continueOnFailure });
+    return this;
+  }
+
+  async save() {
+    if (!this.name) throw new Error("Schedule name is required.");
+    const schedulePayload = {
+      name: this.name,
+      is_active: this.isActive,
+      only_when_online: this.onlyWhenOnline,
+      minute: this.cronConfig.minute,
+      hour: this.cronConfig.hour,
+      day_of_month: this.cronConfig.day_of_month,
+      month: this.cronConfig.month,
+      day_of_week: this.cronConfig.day_of_week
+    };
+    const scheduleRes = await this.handle.gateway.request({
+      api: "client",
+      method: "POST",
+      path: `/servers/${this.handle.identifier}/schedules`,
+      body: schedulePayload
+    });
+    const scheduleId = (scheduleRes as any).attributes.id;
+    for (let i = 0; i < this.tasksList.length; i++) {
+      const task = this.tasksList[i]!;
+      await this.handle.gateway.request({
+        api: "client",
+        method: "POST",
+        path: `/servers/${this.handle.identifier}/schedules/${scheduleId}/tasks`,
+        body: {
+          sequence_id: i + 1,
+          action: task.action,
+          payload: task.payload,
+          time_offset: task.timeOffset,
+          continue_on_failure: task.continueOnFailure
+        }
+      });
+    }
+    return scheduleRes;
+  }
+}
+
+function getPteroSmtpConfig() {
+  const envPath = "/var/www/pterodactyl/.env";
+  if (!fs.existsSync(envPath)) {
+    throw new Error("Pterodactyl environment file tidak ditemukan di /var/www/pterodactyl/.env");
+  }
+  const content = fs.readFileSync(envPath, "utf-8");
+  const config: Record<string, string> = {};
+  content.split("\n").forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith("#") && trimmed.includes("=")) {
+      const parts = trimmed.split("=");
+      const key = parts[0]!.trim();
+      let val = parts.slice(1).join("=").trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      config[key] = val;
+    }
+  });
+  const host = config.MAIL_HOST;
+  const port = config.MAIL_PORT;
+  const username = config.MAIL_USERNAME;
+  const password = config.MAIL_PASSWORD;
+  const encryption = config.MAIL_ENCRYPTION;
+  const fromAddress = config.MAIL_FROM_ADDRESS;
+  const fromName = config.MAIL_FROM_NAME || "Pterodactyl Panel";
+  if (!host || !port || !username || !password) {
+    throw new Error("SMTP configuration tidak lengkap di Pterodactyl .env");
+  }
+  return { host, port: Number(port), username, password, encryption, fromAddress, fromName };
+}
+
+function cleanupLocalFiles(tarPath: string, extractDir: string, zipPath: string) {
+  try {
+    if (fs.existsSync(tarPath)) fs.unlinkSync(tarPath);
+    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    if (fs.existsSync(extractDir)) {
+      fs.rmSync(extractDir, { recursive: true, force: true });
+    }
+  } catch {}
 }
