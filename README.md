@@ -1,192 +1,530 @@
 # Akadev Pterodactyl Gateway
 
-**SDK TypeScript Modern untuk Integrasi Pterodactyl Panel yang Mudah, Lengkap, dan Real-time.**
+[![NPM Version](https://img.shields.io/npm/v/@akaanakbaik/pterodactyl-gateway.svg?style=flat-flat&color=brightgreen)](https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway)
+[![License](https://img.shields.io/github/license/akaanakbaik/pterodactyl-gateway.svg?style=flat-flat&color=blue)](https://github.com/akaanakbaik/pterodactyl-gateway/blob/main/LICENSE)
+[![Node Version](https://img.shields.io/node/v/@akaanakbaik/pterodactyl-gateway.svg?style=flat-flat)](https://nodejs.org)
+[![NPM Downloads](https://img.shields.io/npm/dm/@akaanakbaik/pterodactyl-gateway.svg?style=flat-flat)](https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway)
 
-`@akaanakbaik/pterodactyl-gateway` · `v1.3.0` · `Node.js >=18` · `MIT`
+**SDK TypeScript & JavaScript Modern untuk Pterodactyl Panel dengan fitur Auto-Deployment, WebSocket Auto-Reconnect, Ekspor Backup Otomatis ke Email, dan Fluent Schedule Builder.**
 
 [**npm**](https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway) · [**GitHub**](https://github.com/akaanakbaik/pterodactyl-gateway)
 
-Pterodactyl Gateway adalah SDK yang dirancang khusus untuk memudahkan developer (baik mahir maupun awam) dalam membangun aplikasi yang terintegrasi dengan Pterodactyl Panel. Dengan fokus pada **SDK-first approach**, sistem logging yang informatif, dan fitur real-time, Anda dapat membuat dashboard hosting, bot panel, atau sistem otomatisasi lainnya dengan sangat cepat.
+---
 
-## Fitur Utama
+## 1. Inisialisasi & Diagnostik
 
--   🚀 **Smart SDK**: Inisialisasi mudah dengan smart defaults untuk Nest, Egg, dan Alokasi Port.
--   🛠️ **Full CRUD Support**: Kelola User dan Server (Create, Read, Update, Delete) secara lengkap.
--   📡 **Real-time Control**: Dukungan WebSocket untuk konsol server dan statistik resource.
--   📝 **Super Logger**: Sistem log informatif (Success, Info, Warn, Debug, Error) untuk memudahkan debugging.
--   ⚠️ **Custom Error Handling**: Pesan error yang sangat detail lengkap dengan petunjuk cara memperbaikinya.
--   🔒 **Type Safe**: Ditulis sepenuhnya dalam TypeScript dengan interface API yang akurat.
--   🤖 **Integration Helpers**: Template siap pakai untuk bot Telegram, WhatsApp, Discord, dan Website API.
--   🔄 **Auto Retry**: Dukungan retry otomatis dengan exponential backoff untuk error transient.
--   🔍 **Server Search**: Cari server berdasarkan nama dengan mudah.
--   🎯 **Find Nest & Egg**: Cari nest/egg berdasarkan nama dengan error handling detail.
--   ⚡ **Auto Defaults**: Auto-resolve port, nest, egg, startup, dan docker image.
--   📊 **Update Specs**: Ubah spesifikasi server (RAM, CPU, Disk) dengan mudah.
--   👤 **Change Ownership**: Pindahkan server ke user lain.
--   🔄 **Change Nest/Egg**: Ubah nest dan egg server yang sudah ada.
--   📋 **Server Details**: Ambil detail lengkap server dengan nama node, nest, egg, dan user.
--   🚀 **Batch Operations**: Operasi batch untuk suspend, unsuspend, reinstall, atau delete multiple servers.
-
-## Instalasi
-
-```bash
-npm install @akaanakbaik/pterodactyl-gateway
-```
-
-## Quick Start (Sangat Mudah!)
-
-Cukup masukkan domain dan API Key Anda, dan SDK siap digunakan.
+Memulai koneksi ke Pterodactyl Panel menggunakan domain, Application API Key (PTLA) untuk tindakan admin, dan Client API Key (PTLC) untuk tindakan pengguna.
 
 ```typescript
 import { createPtero } from "@akaanakbaik/pterodactyl-gateway";
 
 const ptero = createPtero({
-  domain: "https://panel.anda.com",
-  ptla: "ptla_xxx", // Application API Key (Admin)
-  ptlc: "ptlc_xxx", // Client API Key (User)
-  debug: true,      // Aktifkan log super lengkap
-  retry: {          // Aktifkan auto retry (opsional)
-    retries: 3,
-    baseDelay: 1000,
-    maxDelay: 10000
-  }
+  domain: "panel.example.com",
+  ptla: "ptla_your_application_key",
+  ptlc: "ptlc_your_client_key",
+  debug: true
 });
-
-// Cek koneksi
-const status = await ptero.connect();
-if (status.ok) {
-  console.log("Terhubung ke panel!");
-}
 ```
 
-## Manajemen User (Smart & Auto)
-
-Anda tidak perlu pusing mengecek apakah user sudah ada atau belum.
-
+### Cek Koneksi (Laten & Mode)
 ```typescript
-// Ambil user jika ada, atau buat baru jika belum ada
+const conn = await ptero.connect();
+console.log(conn.ok, conn.mode, conn.latency);
+```
+
+### Analisis Doctor (Pengecekan Izin API)
+```typescript
+const report = await ptero.doctor();
+console.log(report.ok, report.checks);
+```
+
+---
+
+## 2. Manajemen Pengguna (User Management)
+
+Melakukan operasi CRUD penuh pada akun admin/pengguna panel.
+
+### Buat User Baru (Smart Get or Create)
+```typescript
 const user = await ptero.smart.users.getOrCreate({
-  username: "akadev_user",
-  email: "user@example.com",
-  password: "PasswordAman123!",
+  username: "customer_akadev",
+  email: "customer@akadev.me",
+  password: "auto",
   administrator: false
 });
-
-console.log(`User ID: ${user.id}`);
-
-// Cari user berdasarkan email
-const found = await ptero.application.users.find("user@example.com");
+console.log(user.id, user.username, user.email);
 ```
 
-## Manajemen Server (Deploy Instan)
-
-Membuat server kini hanya butuh satu perintah. SDK akan otomatis mencarikan alokasi port yang kosong.
-
+### Buat User Baru (Raw)
 ```typescript
-const server = await ptero.smart.servers.create({
-  name: "My Awesome Bot",
-  email: "user@example.com",
-  autoCreateUser: true, // Otomatis buat user jika email belum terdaftar
-  nodeId: 1,
-  nestId: 5,   // NodeJS Nest
-  eggId: 18,   // NodeJS Egg
-  preset: "basic", // Gunakan preset specs (mini/basic/standard/premium)
+const newUser = await ptero.application.users.create({
+  username: "user_baru",
+  email: "baru@akadev.me",
+  password: "PasswordRahasia123!",
+  root_admin: false,
+  first_name: "User",
+  last_name: "Baru"
+});
+console.log(newUser);
+```
+
+### Ambil Daftar User (Pagination)
+```typescript
+const list = await ptero.application.users.list(1);
+console.log(list.data);
+```
+
+### Detail User Spesifik
+```typescript
+const userDetail = await ptero.application.users.get(1);
+console.log(userDetail.attributes.username);
+```
+
+### Cari User Berdasarkan Email
+```typescript
+const foundUser = await ptero.application.users.find("baru@akadev.me");
+console.log(foundUser);
+```
+
+### Update Data User
+```typescript
+const updated = await ptero.application.users.update(1, {
+  username: "user_diupdate",
+  email: "update@akadev.me",
+  first_name: "Nama",
+  last_name: "Baru"
+});
+console.log(updated);
+```
+
+### Hapus User
+```typescript
+await ptero.application.users.delete(1);
+```
+
+---
+
+## 3. Manajemen Lokasi & Node
+
+Melihat lokasi wilayah dan mengelola node/alokasi port server Pterodactyl.
+
+### List & Detail Lokasi
+```typescript
+const locations = await ptero.application.locations.list();
+console.log(locations.data);
+
+const location = await ptero.application.locations.get(1);
+console.log(location);
+```
+
+### List & Detail Node
+```typescript
+const nodes = await ptero.application.nodes.list();
+console.log(nodes.data);
+
+const node = await ptero.application.nodes.get(1);
+console.log(node.attributes.name);
+
+const nodeConfig = await ptero.application.nodes.config(1);
+console.log(nodeConfig);
+```
+
+### Manajemen Alokasi Port Node
+```typescript
+const allocations = await ptero.application.nodes.allocations.list(1);
+console.log(allocations.data);
+
+await ptero.application.nodes.allocations.create(1, {
+  ip: "192.168.1.100",
+  ports: ["25565", "25566"]
 });
 
-console.log(`Server Identifier: ${server.identifier}`);
-
-// Cari server berdasarkan nama
-const servers = await ptero.application.servers.find("My Awesome Bot");
+await ptero.application.nodes.allocations.delete(1, 100);
 ```
 
-## Kontrol Server & Real-time
+---
 
-Gunakan `serverHandle` untuk mengontrol server secara mendalam.
+## 4. Manajemen Nest & Egg
+
+Membaca struktur Nest (kategori) dan Egg (konfigurasi startup server).
+
+### List & Detail Nest
+```typescript
+const nests = await ptero.application.nests.list();
+console.log(nests.data);
+
+const nest = await ptero.application.nests.get(5);
+console.log(nest.attributes.name);
+
+const nestByName = await ptero.application.nests.find("nodejs");
+console.log(nestByName.id);
+```
+
+### List & Detail Egg
+```typescript
+const eggs = await ptero.application.nests.eggs.list(5);
+console.log(eggs.data);
+
+const egg = await ptero.application.nests.eggs.get(5, 15);
+console.log(egg.attributes.name);
+
+const eggByName = await ptero.application.nests.eggs.find(5, "Egg Bot Wa");
+console.log(eggByName.id);
+```
+
+---
+
+## 5. Manajemen Server (Administrasi & Deployment)
+
+Mendeploy server baru secara otomatis, mengubah spesifikasi, pemilik, dan nest/egg.
+
+### Smart Server Preview (Uji Payload Sebelum Deploy)
+```typescript
+const preview = await ptero.smart.servers.preview({
+  name: "Server Uji Coba",
+  description: "Server test deploy",
+  email: "customer@akadev.me",
+  autoCreateUser: true,
+  nodeId: 1,
+  nestId: 5,
+  eggId: 15,
+  preset: "mini"
+});
+console.log(preview.payload, preview.allocation);
+```
+
+### Deploy Server Baru
+```typescript
+const server = await ptero.smart.servers.create({
+  name: "Server Game Akadev",
+  description: "Dibuat otomatis oleh SDK",
+  email: "customer@akadev.me",
+  autoCreateUser: true,
+  nodeId: 1,
+  nestId: 5,
+  eggId: 15,
+  preset: "standard",
+  startOnCompletion: true
+});
+console.log(server.id, server.identifier);
+```
+
+### Ambil Detail Lengkap Server Admin
+```typescript
+const details = await ptero.getServerDetails(18);
+console.log(details.name, details.nodeName, details.userEmail);
+```
+
+### Update Spesifikasi / Limits Server
+```typescript
+await ptero.smart.servers.updateSpecs(18, {
+  memory: "4GB",
+  disk: "10GB",
+  cpu: "200%",
+  databases: 2,
+  backups: 2,
+  allocations: 1
+});
+```
+
+### Pindahkan Kepemilikan Server
+```typescript
+await ptero.smart.servers.changeOwnership(18, {
+  userId: 2
+});
+```
+
+### Ubah Nest & Egg Server
+```typescript
+await ptero.smart.servers.changeNestEgg(18, {
+  nestId: 5,
+  eggId: 15,
+  dockerImage: "ghcr.io/parkervcp/yolks:nodejs_22",
+  startup: "npm start"
+});
+```
+
+### Kontrol Status Server (Admin)
+```typescript
+await ptero.application.servers.suspend(18);
+await ptero.application.servers.unsuspend(18);
+await ptero.application.servers.reinstall(18);
+```
+
+### Hapus Server (Permanen & Paksa)
+```typescript
+await ptero.application.servers.delete(18, true);
+```
+
+### Operasi Batch (Multi Server)
+```typescript
+await ptero.batchServerOperation([18, 19, 20], "suspend");
+await ptero.batchServerOperation([18, 19, 20], "unsuspend");
+await ptero.batchServerOperation([18, 19, 20], "delete", { force: true });
+```
+
+---
+
+## 6. Kontrol Client Server
+
+Interaksi pengguna akhir dengan server (Client API).
 
 ```typescript
-const server = ptero.server("a0345ab5");
-
-// Power actions
-await server.power("start");
-await server.power("restart");
-
-// Kirim command ke konsol
-await server.command("say Hello World!");
-
-// Baca resource (CPU, RAM, Disk)
-const stats = await server.resources();
-console.log(stats.attributes.resources);
-
-// File Manager
-await server.files.write("/config.json", JSON.stringify({ version: "1.0.0" }));
-const content = await server.files.read("/config.json");
+const server = ptero.server("ca7b58fd");
 ```
 
-### Real-time Console (WebSocket)
+### Sinyal Power Server
+```typescript
+await server.power("start");
+await server.power("stop");
+await server.power("restart");
+await server.power("kill");
+```
+
+### Kirim Perintah ke Konsol
+```typescript
+await server.command("say Halo Dunia!");
+```
+
+### Ambil Penggunaan Resource Live
+```typescript
+const res = await server.resources();
+console.log(res.attributes.state, res.attributes.resources.cpu_absolute);
+```
+
+---
+
+## 7. Pengelola File Server (Client File Manager)
+
+Mengelola file dan direktori di dalam kontainer server game/bot.
+
+### Tulis & Baca File
+```typescript
+await server.files.write("/index.js", "console.log('Akadev Gateway');");
+
+const data = await server.files.read("/index.js");
+console.log(data);
+```
+
+### List File & Folder
+```typescript
+const list = await server.files.list("/");
+console.log(list.data);
+```
+
+### Buat Folder Baru
+```typescript
+await server.files.mkdir("/", "dist");
+```
+
+### Ganti Nama / Pindahkan File
+```typescript
+await server.files.rename("/", [
+  { from: "index.js", to: "main.js" }
+]);
+```
+
+### Kompres & Dekompres
+```typescript
+await server.files.compress("/", ["main.js", "dist"]);
+await server.files.decompress("/", "main.js.tar.gz");
+```
+
+### Hapus File / Folder
+```typescript
+await server.files.delete("/", ["main.js", "dist", "main.js.tar.gz"]);
+```
+
+### Operasi File JSON Praktis
+```typescript
+await server.files.json.write("/config.json", { port: 3000, debug: false });
+
+const config = await server.files.json.read("/config.json");
+console.log(config);
+```
+
+---
+
+## 8. Pengelola Port & Jaringan Server
+
+Mengelola alokasi alamat port pada server.
+
+### List Port Terpilih
+```typescript
+const net = await server.network.list();
+console.log(net.data);
+```
+
+### Alokasikan Port Tambahan
+```typescript
+await server.network.assign();
+```
+
+### Set Note / Catatan Port
+```typescript
+await server.network.setNote(21, "Port untuk bot whatsapp");
+```
+
+### Set Port Utama (Primary Allocation)
+```typescript
+await server.network.setPrimary(21);
+```
+
+### Hapus Alokasi Port Tambahan
+```typescript
+await server.network.delete(21);
+```
+
+---
+
+## 9. Pengelola Database Server
+
+Mengelola database MySQL server.
+
+### List Database Server
+```typescript
+const dbs = await server.databases.list();
+console.log(dbs.data);
+```
+
+### Buat Database Baru
+```typescript
+const db = await server.databases.create("game_db");
+console.log(db.attributes.id, db.attributes.relationships.password);
+```
+
+### Ganti Password Database
+```typescript
+await server.databases.rotatePassword("db_id_xxx");
+```
+
+### Hapus Database
+```typescript
+await server.databases.delete("db_id_xxx");
+```
+
+---
+
+## 10. Pengelola Backup Server
+
+Membuat dan memulihkan file pencadangan.
+
+### List Backup Server
+```typescript
+const backups = await server.backups.list();
+console.log(backups.data);
+```
+
+### Buat Backup Baru (Dengan Auto-Filter Opsional)
+```typescript
+const backup = await server.backups.create("backup_clean", "node_modules\nvendor\ntmp");
+console.log(backup.attributes.uuid);
+```
+
+### Detail Backup
+```typescript
+const backupDetail = await server.backups.get("backup_uuid_xxx");
+console.log(backupDetail.attributes.bytes);
+```
+
+### Dapatkan Link Download Backup
+```typescript
+const downloadLink = await server.backups.download("backup_uuid_xxx");
+console.log(downloadLink.attributes.url);
+```
+
+### Hapus Backup
+```typescript
+await server.backups.delete("backup_uuid_xxx");
+```
+
+---
+
+## 11. WebSocket Real-time Stream
+
+Mendengarkan event status server, log konsol, dan penggunaan memori/CPU secara real-time. Dilengkapi mekanisme auto-reconnect dan auto token-refresh jika sambungan terputus.
 
 ```typescript
 const ws = server.websocket.create();
 
-ws.on("status", (data) => {
-  console.log(`Status Server: ${data.state}`);
+ws.onConsole((log) => {
+  console.log("Console:", log);
 });
 
-ws.on("console", (data) => {
-  console.log(`[CONSOLE] ${data.line}`);
+ws.onStats((stats) => {
+  console.log("RAM:", stats.memory_bytes, "CPU:", stats.cpu_absolute);
 });
 
-ws.on("stats", (data) => {
-  console.log(`RAM: ${data.memory_bytes / 1024 / 1024} MB`);
+ws.onStatus((status) => {
+  console.log("Status:", status);
 });
 
 await ws.connect();
 ```
 
-## Retry & Error Handling
+---
 
-SDK mendukung retry otomatis untuk error transient (429, 502, 503, 504).
+## 12. Fluent Schedule Builder
+
+Membuat jadwal tugas terjadwal (Cron Job) bawaan panel menggunakan struktur builder terantai.
 
 ```typescript
-const ptero = createPtero({
-  domain: "https://panel.anda.com",
-  ptla: "ptla_xxx",
-  retry: {
-    retries: 3,        // Jumlah retry
-    baseDelay: 1000,   // Delay awal (ms)
-    maxDelay: 10000,   // Delay maksimal (ms)
-    retryOn: [429, 502, 503, 504] // HTTP status untuk retry
-  }
+const schedule = server.createScheduleBuilder()
+  .setName("Pembersihan Mingguan")
+  .setCron("0 0 * * 0")
+  .setOnlyWhenOnline(true)
+  .addTask("command", "say Server membersihkan data cache...", 0, true)
+  .addTask("command", "npm run clean", 10, false)
+  .addTask("backup", "", 30, false);
+
+await schedule.save();
+```
+
+---
+
+## 13. SMTP Email & Auto Backup Exporter (.zip)
+
+Mengirim email pemberitahuan ke pelanggan dan melakukan pencadangan zip otomatis secara eksternal. Secara otomatis membaca konfigurasi SMTP Host, Port, Username, Password, dan Pengirim dari file `/var/www/pterodactyl/.env` di server panel Anda.
+
+### Kirim Email Tertarget ke Pengguna
+```typescript
+await ptero.email.sendToUser(1, {
+  subject: "Pengumuman Pembayaran Server",
+  html: "<h2>Halo</h2><p>Server Anda akan segera jatuh tempo dalam 3 hari.</p>",
+  attachments: [
+    {
+      filename: "invoice.pdf",
+      path: "/tmp/invoice.pdf"
+    }
+  ]
 });
 ```
 
-## Sistem Error & Logging Super Lengkap
-
-SDK ini dilengkapi dengan `PteroLogger` yang memberikan output cantik di terminal Anda. Jika terjadi kesalahan, `PteroError` akan memberikan alasan yang jelas:
-
-```text
-❌ [AUTH_FAILED] Autentikasi client API gagal.
-💡 Petunjuk: API Key PTLC tidak valid atau tidak memiliki izin.
-🛠️ Langkah Perbaikan:
-   1. Cek kembali API Key di panel Pterodactyl
-   2. Pastikan API Key memiliki permission yang cukup
+### Kirim Email Broadcast Massal ke Seluruh Pengguna
+```typescript
+await ptero.email.broadcast({
+  subject: "Pemeliharaan Node Server Indonesia",
+  html: "<h3>Pemberitahuan Sistem</h3><p>Node ID 1 akan dimatikan sementara untuk pemeliharaan RAM.</p>"
+});
 ```
 
-## Preset Spesifikasi
+### Auto Backup Exporter via Email (.zip)
+Secara otomatis membuat backup di panel dengan menyaring folder-folder berat (`node_modules`, `vendor`, `cache`, `tmp`, `temp`, `.git`), mengunduh file hasil backup, mengompres ulangnya ke ekstensi `.zip`, mengirimkannya langsung ke email pemilik server, dan menghapus sisa file backup di panel.
+```typescript
+await ptero.exportAndEmailBackup(18);
+```
 
-Anda dapat menggunakan preset bawaan atau melakukan override:
+### Backup Massal Pengguna
+```typescript
+await ptero.backupAndEmailUserServers(1);
+```
 
-| Preset | RAM | Disk | CPU |
-| :--- | :--- | :--- | :--- |
-| `mini` | 512MB | 1GB | 50% |
-| `basic` | 1GB | 2GB | 100% |
-| `standard` | 2GB | 5GB | 200% |
-| `premium` | 4GB | 10GB | 400% |
+---
 
-## Keamanan
-
-- **Jangan pernah** membagikan PTLA/PTLC Anda di client-side (browser).
-- Gunakan environment variables (`PTERO_DOMAIN`, `PTERO_PTLA`, `PTERO_PTLC`) untuk keamanan maksimal.
-- SDK ini mendukung `PteroGateway.fromEnv()` untuk kemudahan deployment.
+## Keamanan & Penggunaan Terbuka
+- Simpan kredensial Anda di environment variables (`PTERO_DOMAIN`, `PTERO_PTLA`, `PTERO_PTLC`).
+- Gunakan `PteroGateway.fromEnv()` untuk pemanggilan otomatis dari konfigurasi environment variables.
+- SDK ini dipastikan bebas dari baris komentar di seluruh source kodenya.
 
 ---
 

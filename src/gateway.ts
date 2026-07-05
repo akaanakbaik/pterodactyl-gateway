@@ -42,7 +42,7 @@ export class PteroGateway {
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
     this.timeout = config.timeout ?? 15000;
-    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/1.3.0";
+    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/1.0.3";
     this.safeMode = config.safeMode ?? true;
     this.presets = config.presets ?? {
       mini: { memory: "512MB", disk: "1GB", cpu: 50, databases: 0, allocations: 1, backups: 0 },
