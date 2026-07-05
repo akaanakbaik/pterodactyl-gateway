@@ -16,7 +16,9 @@ import {
   ServerPowerSignal,
   UpdateServerSpecsInput,
   ChangeServerOwnershipInput,
-  ChangeServerNestEggInput
+  ChangeServerNestEggInput,
+  SendEmailOptions,
+  EmailAttachment
 } from "./types.js";
 import { asObject, getCollection, getDataAttributes, maskSecret, normalizeDomain, parseSizeToMiB, parseCpu, toBoolean, ensureNonNegativeInteger } from "./utils.js";
 import { PteroWebSocket } from "./websocket.js";
@@ -152,6 +154,14 @@ export class PteroGateway {
         changeOwnership: (serverId: number, input: ChangeServerOwnershipInput, options?: OperationOptions) => this.changeServerOwnership(serverId, input, options),
         changeNestEgg: (serverId: number, input: ChangeServerNestEggInput, options?: OperationOptions) => this.changeServerNestEgg(serverId, input, options)
       }
+    };
+  }
+
+  get email() {
+    return {
+      send: (options: SendEmailOptions) => this.sendEmail(options),
+      sendToUser: (userId: number, options: Omit<SendEmailOptions, "to">) => this.sendEmailToUser(userId, options),
+      broadcast: (options: Omit<SendEmailOptions, "to">) => this.broadcastEmail(options)
     };
   }
 
@@ -514,6 +524,85 @@ export class PteroGateway {
     }
     
     return { operation, total: serverIds.length, success: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results };
+  }
+
+  private async sendEmail(options: SendEmailOptions) {
+    const smtp = options.smtp || getPteroSmtpConfig();
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.default.createTransport({
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.port === 465,
+      auth: {
+        user: smtp.username,
+        pass: smtp.password
+      },
+      tls: {
+        rejectUnauthorized: false
+      }
+    });
+    const toAddress = Array.isArray(options.to) ? options.to.join(",") : options.to;
+    const mailOptions = {
+      from: `"${smtp.fromName}" <${smtp.fromAddress}>`,
+      to: toAddress,
+      subject: options.subject,
+      text: options.text,
+      html: options.html,
+      attachments: options.attachments
+    };
+    return transporter.sendMail(mailOptions);
+  }
+
+  private async sendEmailToUser(userId: number, options: Omit<SendEmailOptions, "to">) {
+    const user = await this.application.users.get(userId);
+    const attrs = getDataAttributes(user);
+    const email = attrs.email;
+    if (!email) {
+      throw new Error(`Email tidak ditemukan untuk user ID ${userId}`);
+    }
+    return this.sendEmail({
+      ...options,
+      to: String(email)
+    });
+  }
+
+  private async broadcastEmail(options: Omit<SendEmailOptions, "to">) {
+    const emails: string[] = [];
+    let page = 1;
+    let hasMore = true;
+    while (hasMore) {
+      const res = await this.application.users.list(page);
+      const data = getCollection(res);
+      data.forEach(user => {
+        const attrs = getDataAttributes(user);
+        if (attrs.email) {
+          emails.push(String(attrs.email));
+        }
+      });
+      const pagination = (res as any).meta?.pagination;
+      if (pagination && pagination.current_page < pagination.total_pages) {
+        page++;
+      } else {
+        hasMore = false;
+      }
+    }
+    if (emails.length === 0) {
+      throw new Error("Tidak ada user dengan alamat email untuk dibroadcast.");
+    }
+    const results = [];
+    for (const email of emails) {
+      try {
+        await this.sendEmail({
+          ...options,
+          to: email
+        });
+        results.push({ email, success: true });
+      } catch (err: any) {
+        this.logger.error(`Gagal mengirim broadcast ke ${email}: ${err.message}`);
+        results.push({ email, success: false, error: err.message });
+      }
+    }
+    return results;
   }
 
   async exportAndEmailBackup(serverId: number, targetEmail?: string) {
@@ -886,6 +975,17 @@ export class PteroServerHandle {
 
   createScheduleBuilder() {
     return new PteroScheduleBuilder(this);
+  }
+
+  async setupAutoBackupSchedule(options: { cron: string; name?: string; onlyWhenOnline?: boolean }) {
+    const name = options.name || "Auto Backup Schedule";
+    const onlyWhenOnline = options.onlyWhenOnline ?? false;
+    const builder = this.createScheduleBuilder()
+      .setName(name)
+      .setCron(options.cron)
+      .setOnlyWhenOnline(onlyWhenOnline)
+      .addTask("backup", "", 0, false);
+    return builder.save();
   }
 }
 

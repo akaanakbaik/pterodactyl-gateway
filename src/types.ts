@@ -318,3 +318,27 @@ export type ChangeServerNestEggInput = {
   dockerImage?: string;
   startup?: string;
 };
+
+export type EmailAttachment = {
+  filename: string;
+  content?: string | Buffer;
+  path?: string;
+  contentType?: string;
+};
+
+export type SendEmailOptions = {
+  to: string | string[];
+  subject: string;
+  text?: string;
+  html?: string;
+  attachments?: EmailAttachment[];
+  smtp?: {
+    host: string;
+    port: number;
+    username: string;
+    password?: string;
+    encryption?: string;
+    fromAddress?: string;
+    fromName?: string;
+  };
+};
