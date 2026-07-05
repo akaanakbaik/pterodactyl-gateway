@@ -85,7 +85,7 @@
     "node": ">=18"
   },
   "devDependencies": {
-    "@types/node": "^20.11.30",
+    "@types/node": "^26.1.0",
     "@types/nodemailer": "^8.0.1",
     "@types/ws": "^8.18.1",
     "typescript": "^5.4.5"
