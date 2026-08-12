@@ -30,7 +30,9 @@
     "build": "npm run clean && tsc -p tsconfig.json && npm run chmod:bin",
     "chmod:bin": "node -e \"const fs=require('fs'); for (const f of ['dist/cli.js','dist/cli-entry.js','dist/wizard-cli.js']) if (fs.existsSync(f)) fs.chmodSync(f, 0o755)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test test/*.test.js",
+    "test": "npm run build && npm run test:runtime",
+    "test:runtime": "node --test test/*.test.js",
+    "test:source": "node scripts/source-guard.js",
     "test:cli": "npm run build && node dist/cli-entry.js help && node dist/cli-entry.js version --json && node dist/cli-entry.js self-check --json && node dist/cli-entry.js release-check --json",
     "test:pack": "npm run build && npm pack --dry-run",
     "test:release": "node scripts/release-guard.js",
@@ -38,7 +40,7 @@
     "ci": "npm run verify && npm run security:audit",
     "cli": "node dist/cli-entry.js",
     "wizard": "node dist/wizard-cli.js",
-    "verify": "npm run typecheck && npm test && npm run test:cli && npm run test:pack && npm run test:release",
+    "verify": "npm run typecheck && npm run test:source && npm test && npm run test:cli && npm run test:pack && npm run test:release",
     "prepublishOnly": "npm run verify"
   },
   "keywords": [

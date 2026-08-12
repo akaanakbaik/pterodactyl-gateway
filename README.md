@@ -4,6 +4,7 @@
 [![License](https://img.shields.io/github/license/akaanakbaik/pterodactyl-gateway.svg?style=flat-flat&color=blue)](https://github.com/akaanakbaik/pterodactyl-gateway/blob/main/LICENSE)
 [![Node Version](https://img.shields.io/node/v/@akaanakbaik/pterodactyl-gateway.svg?style=flat-flat)](https://nodejs.org)
 [![NPM Downloads](https://img.shields.io/npm/dm/@akaanakbaik/pterodactyl-gateway.svg?style=flat-flat)](https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway)
+[![CI](https://github.com/akaanakbaik/pterodactyl-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/akaanakbaik/pterodactyl-gateway/actions/workflows/ci.yml)
 
 **SDK TypeScript & JavaScript Modern untuk Pterodactyl Panel dengan fitur Auto-Deployment, WebSocket Auto-Reconnect, Ekspor Backup Otomatis ke Email, dan Fluent Schedule Builder.**
 
@@ -30,6 +31,16 @@ SDK membutuhkan Node.js 18 atau lebih baru.
 ## SDK usage
 
 Gunakan `createPtero()` dengan domain panel dan API key minimum yang diperlukan. Application API Key digunakan untuk administrasi panel; Client API Key digunakan untuk operasi server milik pengguna.
+
+## Status Kualitas
+
+| Kontrol | Implementasi |
+|---|---|
+| Runtime yang diuji | Node.js 18, 20, dan 22 melalui GitHub Actions |
+| Quality gate | Typecheck, source guard, regression test, CLI smoke test, package smoke test, dan release guard |
+| Keamanan dependensi | Audit runtime dependency dijalankan pada CI |
+| Artefak | Tarball npm disimpan sebagai artefak CI selama 7 hari dan artefak release check selama 14 hari |
+| Kredensial | Tidak ada key panel, SMTP password, atau GitHub token yang boleh disimpan di source maupun workflow |
 
 ## Integration helpers
 
@@ -214,6 +225,15 @@ console.log(eggByName.id);
 ```
 
 ---
+
+## Cakupan API
+
+| Kelompok | Kemampuan utama |
+|---|---|
+| Application API | User, lokasi, node, allocation, nest, egg, provisioning server, limits, ownership, dan administrasi server |
+| Client API | Account, API key, power, command, resource, file, startup, network, database, backup, schedule, dan WebSocket |
+| Smart helper | Preview, dry-run, auto user, auto environment, preset resource, resolver Nest/Egg, dan allocation otomatis |
+| Operasi aman | Safe mode, retry idempotent-aware, error terstruktur, validasi input, dan pagination dengan batas aman |
 
 ## 5. Manajemen Server (Administrasi & Deployment)
 
@@ -590,6 +610,17 @@ await ptero.backupAndEmailUserServers(1, smtp);
 - Logging SDK tidak aktif secara default. Aktifkan `debug: true` hanya saat diagnosis.
 - Safe mode aktif secara default. Penghapusan user, server, dan allocation Application API memerlukan argumen konfirmasi `true`; gunakan `safeMode: false` hanya dalam otomasi yang sepenuhnya Anda kendalikan.
 - Berikan konfigurasi SMTP secara eksplisit dan jangan menonaktifkan verifikasi TLS kecuali Anda memahami risikonya.
+
+## CI dan Rilis
+
+Setiap push atau pull request ke `main` menjalankan quality gate pada Node.js 18, 20, dan 22. Workflow kemudian membangun tarball, memasangnya dalam proyek kosong, serta memverifikasi CLI dan wizard dari paket hasil build. Release check berjalan manual atau pada tag semver `vX.Y.Z` dan mengunggah kandidat paket sebagai artefak.
+
+Jalankan validasi yang setara secara lokal sebelum membuat rilis:
+
+```bash
+npm ci
+npm run ci
+```
 
 ## Troubleshooting
 

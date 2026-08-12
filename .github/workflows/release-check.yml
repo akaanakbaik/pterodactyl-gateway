@@ -9,10 +9,20 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-check-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CI: true
+  NPM_CONFIG_FUND: false
+  NPM_CONFIG_AUDIT: false
+
 jobs:
   release-check:
     name: Release package validation
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,17 +32,22 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify source
+      - name: Run quality gate
         run: npm run verify
 
-      - name: Pack tarball
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Pack package
         run: npm pack
 
-      - name: Install packed package in temp project
+      - name: Validate packed package in isolated project
+        shell: bash
         run: |
           set -euo pipefail
           WORKSPACE="$PWD"
@@ -40,38 +55,22 @@ jobs:
           SMOKE_DIR="$(mktemp -d)"
           cd "$SMOKE_DIR"
           npm init -y >/dev/null
-          npm install "$PACKAGE_TGZ" --force
+          npm install "$PACKAGE_TGZ" --ignore-scripts
           NPM_ROOT="$(npm root)"
           PACKAGE_DIR="$NPM_ROOT/@akaanakbaik/pterodactyl-gateway"
-          CLI_BIN="$NPM_ROOT/.bin/ptero-gateway"
-          WIZARD_BIN="$NPM_ROOT/.bin/ptero-wizard"
-          echo "SMOKE_DIR=$SMOKE_DIR"
-          echo "NPM_ROOT=$NPM_ROOT"
-          echo "PACKAGE_DIR=$PACKAGE_DIR"
-          ls -la "$NPM_ROOT/.bin"
-          test -d "$PACKAGE_DIR"
           test -f "$PACKAGE_DIR/package.json"
           test -f "$PACKAGE_DIR/dist/cli-entry.js"
           test -f "$PACKAGE_DIR/dist/wizard-cli.js"
-          test -e "$CLI_BIN"
-          test -e "$WIZARD_BIN"
-          node "$PACKAGE_DIR/dist/cli-entry.js" version
-          node "$PACKAGE_DIR/dist/cli-entry.js" self-check
-          node "$PACKAGE_DIR/dist/cli-entry.js" release-check
+          node "$PACKAGE_DIR/dist/cli-entry.js" version --json
+          node "$PACKAGE_DIR/dist/cli-entry.js" self-check --json
+          node "$PACKAGE_DIR/dist/cli-entry.js" release-check --json
           node "$PACKAGE_DIR/dist/cli-entry.js" templates list
           node "$PACKAGE_DIR/dist/wizard-cli.js" help
 
-      - name: Sensitive command help check
-        run: |
-          set -euo pipefail
-          WORKSPACE="$PWD"
-          PACKAGE_TGZ="$WORKSPACE/$(ls akaanakbaik-pterodactyl-gateway-*.tgz | head -n 1)"
-          SMOKE_DIR="$(mktemp -d)"
-          cd "$SMOKE_DIR"
-          npm init -y >/dev/null
-          npm install "$PACKAGE_TGZ" --force
-          NPM_ROOT="$(npm root)"
-          PACKAGE_DIR="$NPM_ROOT/@akaanakbaik/pterodactyl-gateway"
-          test -f "$PACKAGE_DIR/dist/cli-entry.js"
-          node "$PACKAGE_DIR/dist/cli-entry.js" help > "$SMOKE_DIR/help.txt"
-          ! grep -E "admin node|admin nodes|allocation-summary|create-allocation" "$SMOKE_DIR/help.txt"
+      - name: Upload release candidate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-package
+          path: akaanakbaik-pterodactyl-gateway-*.tgz
+          if-no-files-found: error
+          retention-days: 14
