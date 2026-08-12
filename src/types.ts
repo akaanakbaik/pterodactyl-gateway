@@ -157,14 +157,37 @@ export type NormalizedServer = {
   raw?: unknown;
 };
 
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+
+export type PteroResource<T> = {
+  object?: string;
+  attributes: T;
+  meta?: Record<string, unknown>;
+};
+
+export type PteroPagination = {
+  current_page: number;
+  total_pages: number;
+  total?: number;
+  count?: number;
+  per_page?: number;
+};
+
+export type PteroCollection<T> = {
+  object?: string;
+  data: PteroResource<T>[];
+  meta?: { pagination?: PteroPagination };
+};
+
 export type PteroRequestOptions = {
   api: "application" | "client";
-  method?: string;
+  method?: HttpMethod;
   path: string;
   body?: unknown;
   contentType?: "json" | "text";
   responseType?: "json" | "text";
   rejectHtml?: boolean;
+  retryUnsafe?: boolean;
 };
 
 export interface PteroAppUser {

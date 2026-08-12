@@ -211,6 +211,7 @@ test("autoResolveDefaults mengembalikan defaults yang benar", async () => {
     const u = String(url);
     if (u.includes("/nests?")) return json({ data: [{ attributes: { id: 5, name: "Node.js" } }] });
     if (u.includes("/nests/5/eggs")) return json({ data: { attributes: { id: 15, name: "Node.js", startup: "node index.js", docker_images: { "18": "ghcr.io/pterodactyl/yolks:nodejs_18" } } } });
+    if (u.includes("/nests/5")) return json({ data: { attributes: { id: 5, name: "Node.js" } } });
     if (u.includes("/nodes/1/allocations")) return json({ data: [{ attributes: { id: 100, port: 25565, assigned: false } }] });
     return json({ data: { attributes: { id: 1 } } });
   };
@@ -389,4 +390,110 @@ test("WebSocket Node.js mengirim Origin dan connect menunggu koneksi terbuka", a
   websocket.close();
   server.close();
   await closed;
+});
+
+
+test("retry default tidak mengulang POST yang tidak idempotent", async () => {
+  let attempts = 0;
+  const fetcher = async () => {
+    attempts += 1;
+    return new Response(JSON.stringify({ errors: [{ detail: "Terlalu banyak request" }] }), {
+      status: 429,
+      headers: { "Content-Type": "application/json", "Retry-After": "0" }
+    });
+  };
+  const ptero = createPtero({
+    domain: "https://panel.example.com",
+    ptla: "ptla_test",
+    fetcher,
+    retry: { retries: 2, baseDelay: 1, maxDelay: 1 }
+  });
+  await assert.rejects(() => ptero.application.users.create({ username: "user" }));
+  assert.equal(attempts, 1);
+});
+
+test("retryUnsafe mengizinkan caller mengulang POST secara eksplisit", async () => {
+  let attempts = 0;
+  const fetcher = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return new Response(JSON.stringify({ errors: [{ detail: "Terlalu banyak request" }] }), {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Retry-After": "0" }
+      });
+    }
+    return json({ data: { attributes: { ok: true } } });
+  };
+  const ptero = createPtero({
+    domain: "https://panel.example.com",
+    ptla: "ptla_test",
+    fetcher,
+    retry: { retries: 1, baseDelay: 1, maxDelay: 1 }
+  });
+  const result = await ptero.request({ api: "application", method: "POST", path: "/safe-retry", body: {}, retryUnsafe: true });
+  assert.equal(result.data.attributes.ok, true);
+  assert.equal(attempts, 2);
+});
+
+test("findNestByName menjangkau halaman berikutnya", async () => {
+  const fetcher = async url => {
+    const endpoint = String(url);
+    if (endpoint.includes("/nests?page=1")) {
+      return json({ data: [{ attributes: { id: 1, name: "Minecraft" } }], meta: { pagination: { current_page: 1, total_pages: 2 } } });
+    }
+    if (endpoint.includes("/nests?page=2")) {
+      return json({ data: [{ attributes: { id: 5, name: "Nodejs" } }], meta: { pagination: { current_page: 2, total_pages: 2 } } });
+    }
+    return json({ data: [] });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptla: "ptla_test", fetcher });
+  const nest = await ptero.application.nests.find("Nodejs");
+  assert.equal(nest.id, 5);
+});
+
+test("autoResolveDefaults memilih allocation kosong dari halaman berikutnya", async () => {
+  const fetcher = async url => {
+    const endpoint = String(url);
+    if (endpoint.includes("/nests/5/eggs/15")) {
+      return json({ data: { attributes: { id: 15, startup: "node index.js", docker_images: { node: "node:20" } } } });
+    }
+    if (endpoint.includes("/nests/5")) return json({ data: { attributes: { id: 5, name: "Nodejs" } } });
+    if (endpoint.includes("/nodes/1/allocations?page=1")) {
+      return json({ data: [{ attributes: { id: 1, assigned: true, port: 25565 } }], meta: { pagination: { current_page: 1, total_pages: 2 } } });
+    }
+    if (endpoint.includes("/nodes/1/allocations?page=2")) {
+      return json({ data: [{ attributes: { id: 99, assigned: false, port: 25566 } }], meta: { pagination: { current_page: 2, total_pages: 2 } } });
+    }
+    return json({ data: { attributes: { id: 1 } } });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptla: "ptla_test", fetcher });
+  const defaults = await ptero.autoResolveDefaults(1);
+  assert.equal(defaults.allocationId, 99);
+});
+
+test("resolver Nest/Egg meneruskan error ketika default tidak tersedia", async () => {
+  const fetcher = async () => new Response(JSON.stringify({ errors: [{ detail: "Tidak ditemukan" }] }), {
+    status: 404,
+    headers: { "Content-Type": "application/json" }
+  });
+  const ptero = createPtero({ domain: "https://panel.example.com", ptla: "ptla_test", fetcher });
+  await assert.rejects(
+    () => ptero.findNestAndEgg(),
+    error => error instanceof PteroError && error.code === "NOT_FOUND"
+  );
+});
+
+test("safe mode memerlukan konfirmasi untuk penghapusan user", async () => {
+  let deleteCalls = 0;
+  const fetcher = async (_url, init) => {
+    if (init?.method === "DELETE") deleteCalls += 1;
+    return new Response(null, { status: 204 });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptla: "ptla_test", fetcher });
+  await assert.rejects(
+    () => ptero.application.users.delete(1),
+    error => error instanceof PteroError && error.code === "SAFE_MODE_CONFIRMATION_REQUIRED"
+  );
+  await ptero.application.users.delete(1, true);
+  assert.equal(deleteCalls, 1);
 });

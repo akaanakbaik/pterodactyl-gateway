@@ -27,6 +27,8 @@ const DEFAULT_RETRY_CONFIG: Required<RetryConfig> = {
   retryOn: [429, 502, 503, 504]
 };
 
+const RETRY_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "DELETE"]);
+
 export class HttpCore {
   private config: HttpCoreConfig;
   private retryConfig: Required<RetryConfig>;
@@ -61,7 +63,7 @@ export class HttpCore {
         return await this.executeRequest<T>(options, key);
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        if (error instanceof PteroError && this.retryConfig.retryOn.includes(error.status ?? 0) && attempt < maxAttempts) {
+        if (error instanceof PteroError && this.shouldRetry(options, error.status, attempt, maxAttempts)) {
           const delay = this.calculateDelay(attempt, error.retryAfter);
           this.logger.warn(`Retry ${attempt}/${this.retryConfig.retries} setelah ${delay}ms (${error.code})`);
           await sleep(delay);
@@ -72,6 +74,12 @@ export class HttpCore {
     }
 
     throw lastError ?? new Error("Request gagal setelah semua retry");
+  }
+
+  private shouldRetry(options: PteroRequestOptions, status: number | undefined, attempt: number, maxAttempts: number): boolean {
+    const method = (options.method ?? "GET").toUpperCase();
+    const retryableMethod = RETRY_SAFE_METHODS.has(method) || options.retryUnsafe === true;
+    return retryableMethod && this.retryConfig.retryOn.includes(status ?? 0) && attempt < maxAttempts;
   }
 
   private async executeRequest<T = unknown>(options: PteroRequestOptions, key: string): Promise<T> {

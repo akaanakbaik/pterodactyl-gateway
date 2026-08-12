@@ -9,7 +9,7 @@
 
 [**npm**](https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway) · [**GitHub**](https://github.com/akaanakbaik/pterodactyl-gateway)
 
-> Versi stabil saat ini: **1.4.1**.
+> Versi stabil saat ini: **1.4.2**.
 
 ## Navigasi
 
@@ -48,7 +48,22 @@ const ptero = createPtero({
   domain: "panel.example.com",
   ptla: "ptla_your_application_key",
   ptlc: "ptlc_your_client_key",
+  safeMode: true,
   debug: false
+});
+```
+
+### Retry Aman
+
+SDK hanya mengulang request `GET`, `HEAD`, `OPTIONS`, `PUT`, `PATCH`, dan `DELETE` secara otomatis. Request `POST` tidak akan diulang agar operasi create, command, atau tindakan tulis lain tidak terduplikasi. Gunakan `retryUnsafe: true` hanya jika endpoint POST Anda telah dirancang idempotent.
+
+```typescript
+await ptero.request({
+  api: "application",
+  method: "POST",
+  path: "/custom-idempotent-operation",
+  body: { requestId: "unik" },
+  retryUnsafe: true
 });
 ```
 
@@ -125,7 +140,7 @@ console.log(updated);
 
 ### Hapus User
 ```typescript
-await ptero.application.users.delete(1);
+await ptero.application.users.delete(1, true);
 ```
 
 ---
@@ -165,14 +180,14 @@ await ptero.application.nodes.allocations.create(1, {
   ports: ["25565", "25566"]
 });
 
-await ptero.application.nodes.allocations.delete(1, 100);
+await ptero.application.nodes.allocations.delete(1, 100, true);
 ```
 
 ---
 
 ## 4. Manajemen Nest & Egg
 
-Membaca struktur Nest (kategori) dan Egg (konfigurasi startup server).
+Membaca struktur Nest (kategori) dan Egg (konfigurasi startup server). Resolver otomatis meneruskan error bila Nest atau Egg yang diminta tidak ada; SDK tidak lagi memilih ID fallback secara diam-diam.
 
 ### List & Detail Nest
 ```typescript
@@ -202,7 +217,7 @@ console.log(eggByName.id);
 
 ## 5. Manajemen Server (Administrasi & Deployment)
 
-Mendeploy server baru secara otomatis, mengubah spesifikasi, pemilik, dan nest/egg.
+Mendeploy server baru secara otomatis, mengubah spesifikasi, pemilik, dan nest/egg. Pemilihan allocation otomatis memeriksa seluruh halaman allocation node hingga batas aman 100 halaman.
 
 ### Smart Server Preview (Uji Payload Sebelum Deploy)
 ```typescript
@@ -573,6 +588,7 @@ await ptero.backupAndEmailUserServers(1, smtp);
 - Simpan kredensial Anda di environment variables (`PTERO_DOMAIN`, `PTERO_PTLA`, `PTERO_PTLC`).
 - Gunakan `PteroGateway.fromEnv()` untuk pemanggilan otomatis dari konfigurasi environment variables.
 - Logging SDK tidak aktif secara default. Aktifkan `debug: true` hanya saat diagnosis.
+- Safe mode aktif secara default. Penghapusan user, server, dan allocation Application API memerlukan argumen konfirmasi `true`; gunakan `safeMode: false` hanya dalam otomasi yang sepenuhnya Anda kendalikan.
 - Berikan konfigurasi SMTP secara eksplisit dan jangan menonaktifkan verifikasi TLS kecuali Anda memahami risikonya.
 
 ## Troubleshooting

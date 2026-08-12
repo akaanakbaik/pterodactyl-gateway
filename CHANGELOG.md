@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.4.2 (2026-08-12)
+
+### Perbaikan
+- Retry default kini hanya berjalan untuk method HTTP aman atau idempotent. Operasi `POST` memerlukan `retryUnsafe: true` untuk diulang secara eksplisit.
+- Resolver Nest/Egg tidak lagi mengganti resource yang gagal ditemukan dengan ID fallback diam-diam.
+- Pencarian Nest, pemilihan allocation, dan backup-email user kini membaca seluruh halaman API sampai batas aman 100 halaman.
+- Safe mode yang sebelumnya belum dipakai kini memerlukan konfirmasi eksplisit untuk menghapus user, server, atau allocation Application API.
+- Hapus versi statis dari User-Agent default agar tidak drift dari versi package.
+- Tambahkan tipe respons generik `PteroResource`, `PteroCollection`, `PteroPagination`, dan `HttpMethod`.
+- Perbarui `nodemailer`, `ws`, dan `@types/node` ke patch kompatibel terbaru.
+
 ## 1.4.1 (2026-08-12)
 
 ### Perbaikan

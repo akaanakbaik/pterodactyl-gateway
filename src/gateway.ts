@@ -42,7 +42,7 @@ export class PteroGateway {
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
     this.timeout = config.timeout ?? 15000;
-    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway/1.0.3";
+    this.userAgent = config.userAgent ?? "AkadevPterodactylGateway";
     this.safeMode = config.safeMode ?? true;
     this.presets = config.presets ?? {
       mini: { memory: "512MB", disk: "1GB", cpu: 50, databases: 0, allocations: 1, backups: 0 },
@@ -78,7 +78,7 @@ export class PteroGateway {
         get: (id: number) => this.request<any>({ api: "application", path: `/users/${id}` }),
         create: (data: any) => this.request<any>({ api: "application", method: "POST", path: "/users", body: data }),
         update: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/users/${id}`, body: data }),
-        delete: (id: number) => this.request<any>({ api: "application", method: "DELETE", path: `/users/${id}` }),
+        delete: (id: number, confirm = false) => this.deleteApplicationUser(id, confirm),
         find: (email: string) => this.findUserByEmail(email)
       },
       nodes: {
@@ -88,7 +88,7 @@ export class PteroGateway {
         allocations: {
           list: (nodeId: number, page = 1) => this.request<any>({ api: "application", path: `/nodes/${nodeId}/allocations?page=${page}` }),
           create: (nodeId: number, data: any) => this.request<any>({ api: "application", method: "POST", path: `/nodes/${nodeId}/allocations`, body: data }),
-          delete: (nodeId: number, id: number) => this.request<any>({ api: "application", method: "DELETE", path: `/nodes/${nodeId}/allocations/${id}` })
+          delete: (nodeId: number, id: number, confirm = false) => this.deleteApplicationAllocation(nodeId, id, confirm)
         }
       },
       servers: {
@@ -102,7 +102,7 @@ export class PteroGateway {
         suspend: (id: number) => this.request<any>({ api: "application", method: "POST", path: `/servers/${id}/suspend` }),
         unsuspend: (id: number) => this.request<any>({ api: "application", method: "POST", path: `/servers/${id}/unsuspend` }),
         reinstall: (id: number) => this.request<any>({ api: "application", method: "POST", path: `/servers/${id}/reinstall` }),
-        delete: (id: number, force = false) => this.request<any>({ api: "application", method: "DELETE", path: `/servers/${id}${force ? "/force" : ""}` })
+        delete: (id: number, force = false) => this.deleteApplicationServer(id, force)
       },
       locations: {
         list: (page = 1) => this.request<any>({ api: "application", path: `/locations?page=${page}` }),
@@ -172,6 +172,30 @@ export class PteroGateway {
     return this.http.request<T>(options);
   }
 
+  private ensureDestructiveOperation(operation: string, confirmed: boolean) {
+    if (!this.safeMode || confirmed) return;
+    throw new PteroError({
+      code: "SAFE_MODE_CONFIRMATION_REQUIRED",
+      message: `Safe mode memerlukan konfirmasi eksplisit untuk ${operation}.`,
+      hint: "Berikan argumen confirm/force bernilai true atau inisialisasi SDK dengan safeMode: false bila operasi ini memang dikelola oleh sistem otomasi terpercaya."
+    });
+  }
+
+  private async deleteApplicationUser(id: number, confirm: boolean) {
+    this.ensureDestructiveOperation(`menghapus user ID ${id}`, confirm);
+    return this.request<any>({ api: "application", method: "DELETE", path: `/users/${id}` });
+  }
+
+  private async deleteApplicationAllocation(nodeId: number, id: number, confirm: boolean) {
+    this.ensureDestructiveOperation(`menghapus allocation ID ${id} pada node ${nodeId}`, confirm);
+    return this.request<any>({ api: "application", method: "DELETE", path: `/nodes/${nodeId}/allocations/${id}` });
+  }
+
+  private async deleteApplicationServer(id: number, force: boolean) {
+    this.ensureDestructiveOperation(`menghapus server ID ${id}`, force);
+    return this.request<any>({ api: "application", method: "DELETE", path: `/servers/${id}${force ? "/force" : ""}` });
+  }
+
   async connect(): Promise<ConnectResult> {
     const started = Date.now();
     this.logger.info(`Menghubungkan ke ${this.domain}...`);
@@ -201,8 +225,7 @@ export class PteroGateway {
 
   async findNestByName(name: string) {
     this.logger.info(`Mencari nest: ${name}`);
-    const raw = await this.request<any>({ api: "application", path: "/nests" }).catch(() => undefined);
-    const data = getCollection(raw);
+    const data = await this.listAllPages(page => this.application.nests.list(page));
     const match = data.find(item => {
       const attrs = getDataAttributes(item);
       return String(attrs.name ?? "").toLowerCase() === name.toLowerCase();
@@ -225,7 +248,7 @@ export class PteroGateway {
 
   async findEggByName(nestId: number, name: string) {
     this.logger.info(`Mencari egg '${name}' di nest ${nestId}...`);
-    const raw = await this.application.nests.eggs.list(nestId).catch(() => undefined);
+    const raw = await this.application.nests.eggs.list(nestId);
     const data = getCollection(raw);
     const match = data.find(item => {
       const attrs = getDataAttributes(item);
@@ -248,58 +271,20 @@ export class PteroGateway {
   }
 
   async findNestAndEgg(nestName?: string, eggName?: string, defaultNestId = 5, defaultEggId = 15) {
-    let nestId = defaultNestId;
-    let eggId = defaultEggId;
-    let nestName2: string | undefined;
-    let eggName2: string | undefined;
+    const nest = nestName ? await this.findNestByName(nestName) : getDataAttributes(await this.application.nests.get(defaultNestId));
+    const nestId = Number(nest.id ?? 0);
+    if (!nestId) throw new PteroError({ code: "NEST_NOT_FOUND", message: "Nest tidak memiliki ID valid." });
 
-    if (nestName) {
-      try {
-        const nest = await this.findNestByName(nestName);
-        nestId = nest.id;
-        nestName2 = nest.name;
-      } catch (error) {
-        this.logger.warn(`Nest '${nestName}' tidak ditemukan, menggunakan default ID ${defaultNestId}`);
-        try {
-          await this.application.nests.get(defaultNestId);
-        } catch {
-          nestId = 1;
-          this.logger.warn(`Nest ID ${defaultNestId} tidak ada, fallback ke ID 1`);
-        }
-      }
-    } else {
-      try {
-        await this.application.nests.get(nestId);
-      } catch {
-        nestId = 1;
-        this.logger.warn(`Nest ID ${defaultNestId} tidak ada, fallback ke ID 1`);
-      }
-    }
+    const egg = eggName ? await this.findEggByName(nestId, eggName) : getDataAttributes(await this.application.nests.eggs.get(nestId, defaultEggId));
+    const eggId = Number(egg.id ?? 0);
+    if (!eggId) throw new PteroError({ code: "EGG_NOT_FOUND", message: "Egg tidak memiliki ID valid." });
 
-    if (eggName) {
-      try {
-        const egg = await this.findEggByName(nestId, eggName);
-        eggId = egg.id;
-        eggName2 = egg.name;
-      } catch (error) {
-        this.logger.warn(`Egg '${eggName}' tidak ditemukan di nest ${nestId}, menggunakan default ID ${defaultEggId}`);
-        try {
-          await this.application.nests.eggs.get(nestId, defaultEggId);
-        } catch {
-          eggId = 1;
-          this.logger.warn(`Egg ID ${defaultEggId} tidak ada di nest ${nestId}, fallback ke ID 1`);
-        }
-      }
-    } else {
-      try {
-        await this.application.nests.eggs.get(nestId, eggId);
-      } catch {
-        eggId = 1;
-        this.logger.warn(`Egg ID ${defaultEggId} tidak ada di nest ${nestId}, fallback ke ID 1`);
-      }
-    }
-
-    return { nestId, eggId, nestName: nestName2, eggName: eggName2 };
+    return {
+      nestId,
+      eggId,
+      nestName: nestName ? nest.name : String(nest.name ?? ""),
+      eggName: eggName ? egg.name : String(egg.name ?? "")
+    };
   }
 
   async autoResolveDefaults(nodeId: number, options?: { defaultNestId?: number; defaultEggId?: number }) {
@@ -313,8 +298,8 @@ export class PteroGateway {
     const dockerImages = asObject(eggAttr.docker_images);
     const dockerImage = Object.values(dockerImages).find(v => typeof v === "string") as string || String(eggAttr.docker_image ?? "ghcr.io/pterodactyl/yolks:nodejs_18");
     
-    const rawAllocations = await this.application.nodes.allocations.list(nodeId);
-    const freeAllocations = getCollection(rawAllocations).filter(item => {
+    const allocationItems = await this.listAllPages(page => this.application.nodes.allocations.list(nodeId, page));
+    const freeAllocations = allocationItems.filter(item => {
       const attrs = getDataAttributes(item);
       return !attrs.assigned;
     });
@@ -734,8 +719,7 @@ export class PteroGateway {
 
   async backupAndEmailUserServers(userId: number, smtpConfig?: SmtpConfig) {
     this.logger.info(`Mencari server untuk User ID ${userId}...`);
-    const listRes = await this.application.servers.list();
-    const data = getCollection(listRes);
+    const data = await this.listAllPages(page => this.application.servers.list(page));
     const userServers = data.filter(server => {
       const attrs = getDataAttributes(server);
       return Number(attrs.user) === userId;
@@ -759,8 +743,25 @@ export class PteroGateway {
     return results;
   }
 
+  private async listAllPages(fetchPage: (page: number) => Promise<unknown>, maxPages = 100): Promise<unknown[]> {
+    const items: unknown[] = [];
+    for (let page = 1; page <= maxPages; page += 1) {
+      const raw = await fetchPage(page);
+      items.push(...getCollection(raw));
+      const pagination = asObject(asObject(raw).meta).pagination;
+      const currentPage = Number(asObject(pagination).current_page ?? page);
+      const totalPages = Number(asObject(pagination).total_pages ?? page);
+      if (!Number.isFinite(totalPages) || currentPage >= totalPages) return items;
+    }
+    throw new PteroError({
+      code: "PAGINATION_LIMIT_REACHED",
+      message: `Pagination melebihi batas aman ${maxPages} halaman.`,
+      hint: "Naikkan batas pagination melalui API khusus bila data panel memang sangat besar."
+    });
+  }
+
   private async searchServers(query: string) {
-    const raw = await this.request<any>({ api: "application", path: `/servers?filter[name]=${encodeURIComponent(query)}` }).catch(() => undefined);
+    const raw = await this.request<any>({ api: "application", path: `/servers?filter[name]=${encodeURIComponent(query)}` });
     const data = getCollection(raw);
     return data.map(item => {
       const attributes = getDataAttributes(item);
@@ -769,7 +770,7 @@ export class PteroGateway {
   }
 
   private async findUserByEmail(email: string) {
-    const raw = await this.request<any>({ api: "application", path: `/users?filter[email]=${encodeURIComponent(email)}` }).catch(() => undefined);
+    const raw = await this.request<any>({ api: "application", path: `/users?filter[email]=${encodeURIComponent(email)}` });
     const data = getCollection(raw);
     const first = data[0];
     if (!first) return undefined;
@@ -823,10 +824,10 @@ export class PteroGateway {
     const rawEgg = await this.application.nests.eggs.get(input.nestId, input.eggId);
     progress(options, "allocation", 60, "Mencari allocation kosong.");
     const allocationCount = specs.featureLimits.allocations || 1;
-    const rawAllocations = await this.application.nodes.allocations.list(input.nodeId);
+    const allocationItems = await this.listAllPages(page => this.application.nodes.allocations.list(input.nodeId, page));
     let allocation;
     try {
-      allocation = selectAllocations(rawAllocations, allocationCount, input.allocation ?? "auto");
+      allocation = selectAllocations({ data: allocationItems }, allocationCount, input.allocation ?? "auto");
     } catch (error) {
       if (error instanceof PteroError && error.code === "NO_FREE_ALLOCATION") throw ErrorFactory.noFreeAllocation(input.nodeId);
       throw error;
