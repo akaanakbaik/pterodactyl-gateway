@@ -164,6 +164,7 @@ export type PteroRequestOptions = {
   body?: unknown;
   contentType?: "json" | "text";
   responseType?: "json" | "text";
+  rejectHtml?: boolean;
 };
 
 export interface PteroAppUser {
@@ -317,6 +318,8 @@ export type ChangeServerNestEggInput = {
   eggName?: string;
   dockerImage?: string;
   startup?: string;
+  environment?: Record<string, string | number | boolean>;
+  skipScripts?: boolean;
 };
 
 export type EmailAttachment = {
@@ -326,19 +329,22 @@ export type EmailAttachment = {
   contentType?: string;
 };
 
+export type SmtpConfig = {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  encryption?: string;
+  fromAddress?: string;
+  fromName?: string;
+  rejectUnauthorized?: boolean;
+};
+
 export type SendEmailOptions = {
   to: string | string[];
   subject: string;
   text?: string;
   html?: string;
   attachments?: EmailAttachment[];
-  smtp?: {
-    host: string;
-    port: number;
-    username: string;
-    password?: string;
-    encryption?: string;
-    fromAddress?: string;
-    fromName?: string;
-  };
+  smtp?: SmtpConfig;
 };

@@ -6,6 +6,7 @@ export type PteroErrorInput = {
   example?: unknown;
   status?: number;
   raw?: unknown;
+  retryAfter?: number;
 };
 
 export class PteroError extends Error {
@@ -15,6 +16,7 @@ export class PteroError extends Error {
   example?: unknown;
   status?: number;
   raw?: unknown;
+  retryAfter?: number;
 
   constructor(input: PteroErrorInput) {
     super(input.message);
@@ -25,6 +27,7 @@ export class PteroError extends Error {
     this.example = input.example;
     this.status = input.status;
     this.raw = input.raw;
+    this.retryAfter = input.retryAfter;
   }
 
   toString() {

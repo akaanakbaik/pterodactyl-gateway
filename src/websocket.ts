@@ -15,64 +15,81 @@ export class PteroWebSocket {
     this.serverId = serverId;
   }
 
-  async connect() {
+  async connect(): Promise<void> {
     this.isManualClose = false;
     try {
       const auth = await this.gateway.server(this.serverId).websocket.auth();
       const { token, socket } = auth.data ? auth.data : auth;
 
-      if (typeof (globalThis as any).WebSocket === "undefined") {
+      if (typeof window === "undefined") {
         const WS = (await import("ws")).default;
-        this.ws = new WS(socket);
+        this.ws = new WS(socket, { origin: this.gateway.domain });
       } else {
         this.ws = new (globalThis as any).WebSocket(socket);
       }
 
-      this.ws.onopen = () => {
-        this.reconnectCount = 0;
-        this.send("auth", [token]);
-        this.emit("open", {});
-      };
+      await new Promise<void>((resolve, reject) => {
+        let opened = false;
 
-      this.ws.onmessage = (event: any) => {
-        const data = JSON.parse(event.data);
-        this.emit(data.event, data.args);
+        this.ws.onopen = () => {
+          opened = true;
+          this.reconnectCount = 0;
+          this.send("auth", [token]);
+          this.emit("open", {});
+          resolve();
+        };
 
-        if (data.event === "console output") {
-          this.emit("console", data.args[0]);
-        } else if (data.event === "stats") {
-          this.emit("stats_update", JSON.parse(data.args[0]));
-        } else if (data.event === "status") {
-          this.emit("status_change", data.args[0]);
-        }
-      };
+        this.ws.onmessage = (event: any) => {
+          try {
+            const data = JSON.parse(event.data);
+            this.emit(data.event, data.args);
 
-      this.ws.onclose = () => {
-        this.emit("close", {});
-        if (!this.isManualClose) {
-          this.handleReconnect();
-        }
-      };
+            if (data.event === "console output") {
+              this.emit("console", data.args[0]);
+            } else if (data.event === "stats") {
+              this.emit("stats_update", JSON.parse(data.args[0]));
+            } else if (data.event === "status") {
+              this.emit("status_change", data.args[0]);
+            }
+          } catch (error) {
+            this.emit("error", error);
+          }
+        };
 
-      this.ws.onerror = (err: any) => {
-        this.emit("error", err);
-      };
+        this.ws.onclose = () => {
+          this.emit("close", {});
+          if (!opened) {
+            reject(new Error("WebSocket tertutup sebelum koneksi terbuka."));
+            return;
+          }
+          if (!this.isManualClose) this.handleReconnect();
+        };
+
+        this.ws.onerror = (error: unknown) => {
+          this.emit("error", error);
+          if (!opened) reject(error instanceof Error ? error : new Error("WebSocket mengalami error sebelum koneksi terbuka."));
+        };
+      });
     } catch (error) {
       this.emit("error", error);
-      if (!this.isManualClose) {
-        this.handleReconnect();
-      }
+      throw error;
     }
   }
 
   private handleReconnect() {
-    if (this.reconnectCount < this.maxReconnectAttempts) {
-      this.reconnectCount++;
-      this.gateway.logger.warn(`WebSocket disconnected. Reconnecting in ${this.reconnectDelay}ms (Attempt ${this.reconnectCount}/${this.maxReconnectAttempts})...`);
-      setTimeout(() => this.connect(), this.reconnectDelay);
-    } else {
-      this.gateway.logger.error(`WebSocket reconnection failed after ${this.maxReconnectAttempts} attempts.`);
+    if (this.reconnectCount >= this.maxReconnectAttempts || this.isManualClose) {
+      if (!this.isManualClose) this.gateway.logger.error(`WebSocket reconnection failed after ${this.maxReconnectAttempts} attempts.`);
+      return;
     }
+
+    this.reconnectCount++;
+    this.gateway.logger.warn(`WebSocket disconnected. Reconnecting in ${this.reconnectDelay}ms (Attempt ${this.reconnectCount}/${this.maxReconnectAttempts})...`);
+    setTimeout(() => {
+      void this.connect().catch(error => {
+        this.emit("error", error);
+        this.handleReconnect();
+      });
+    }, this.reconnectDelay);
   }
 
   send(event: string, args: any[] = []) {
@@ -100,14 +117,12 @@ export class PteroWebSocket {
 
   private emit(event: string, data: any) {
     if (this.listeners[event]) {
-      this.listeners[event].forEach(cb => cb(data));
+      this.listeners[event].forEach(callback => callback(data));
     }
   }
 
   close() {
     this.isManualClose = true;
-    if (this.ws) {
-      this.ws.close();
-    }
+    if (this.ws) this.ws.close();
   }
 }

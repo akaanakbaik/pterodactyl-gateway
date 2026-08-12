@@ -18,7 +18,7 @@ import {
   ChangeServerOwnershipInput,
   ChangeServerNestEggInput,
   SendEmailOptions,
-  EmailAttachment
+  SmtpConfig
 } from "./types.js";
 import { asObject, getCollection, getDataAttributes, maskSecret, normalizeDomain, parseSizeToMiB, parseCpu, toBoolean, ensureNonNegativeInteger } from "./utils.js";
 import { PteroWebSocket } from "./websocket.js";
@@ -50,7 +50,7 @@ export class PteroGateway {
       standard: { memory: "2GB", disk: "5GB", cpu: 200, databases: 2, allocations: 1, backups: 2 },
       premium: { memory: "4GB", disk: "10GB", cpu: 400, databases: 5, allocations: 1, backups: 5 }
     };
-    this.logger = new PteroLogger(config.debug ?? true);
+    this.logger = new PteroLogger(config.debug ?? false);
     this.http = new HttpCore({
       domain: this.domain,
       applicationKey: this.applicationKey,
@@ -99,7 +99,6 @@ export class PteroGateway {
         update: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/servers/${id}/details`, body: data }),
         updateBuild: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/servers/${id}/build`, body: data }),
         updateStartup: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/servers/${id}/startup`, body: data }),
-        updateInventory: (id: number, data: any) => this.request<any>({ api: "application", method: "PATCH", path: `/servers/${id}/inventory`, body: data }),
         suspend: (id: number) => this.request<any>({ api: "application", method: "POST", path: `/servers/${id}/suspend` }),
         unsuspend: (id: number) => this.request<any>({ api: "application", method: "POST", path: `/servers/${id}/unsuspend` }),
         reinstall: (id: number) => this.request<any>({ api: "application", method: "POST", path: `/servers/${id}/reinstall` }),
@@ -421,22 +420,36 @@ export class PteroGateway {
     }
     
     const rawEgg = await this.application.nests.eggs.get(nestId, eggId);
+    const rawServer = await this.application.servers.get(serverId);
     const eggAttr = getDataAttributes(rawEgg);
-    
+    const serverAttr = getDataAttributes(rawServer);
     const dockerImages = asObject(eggAttr.docker_images);
     const dockerImage = input.dockerImage || Object.values(dockerImages).find(v => typeof v === "string") as string || String(eggAttr.docker_image ?? "");
     const startup = input.startup || String(eggAttr.startup ?? "");
+    const currentEnvironment = asObject(asObject(serverAttr.container).environment);
+    const providedEnvironment = input.environment ?? {};
+    const variables = getCollection(asObject(eggAttr.relationships).variables);
+    const environment = variables.length > 0
+      ? Object.fromEntries(variables.map(variable => {
+          const variableAttr = getDataAttributes(variable);
+          const env = String(variableAttr.env_variable ?? "");
+          const value = providedEnvironment[env] ?? currentEnvironment[env] ?? variableAttr.default_value ?? "";
+          return [env, String(value)];
+        }).filter(([env]) => Boolean(env)))
+      : Object.fromEntries(Object.entries({ ...currentEnvironment, ...providedEnvironment }).map(([key, value]) => [key, String(value)]));
     
     progress(options, "request", 60, "Mengirim update ke panel.");
     
     await this.application.servers.updateStartup(serverId, {
       egg: eggId,
+      image: dockerImage,
       startup,
-      docker_image: dockerImage
+      environment,
+      skip_scripts: input.skipScripts ?? false
     });
     
     progress(options, "done", 100, "Nest dan egg server berhasil diubah.");
-    return { ok: true, serverId, nestId, eggId, dockerImage, startup };
+    return { ok: true, serverId, nestId, eggId, dockerImage, startup, environment };
   }
 
   async getServerDetails(serverId: number) {
@@ -527,7 +540,7 @@ export class PteroGateway {
   }
 
   private async sendEmail(options: SendEmailOptions) {
-    const smtp = options.smtp || getPteroSmtpConfig();
+    const smtp = normalizeSmtpConfig(options.smtp);
     const nodemailer = await import("nodemailer");
     const transporter = nodemailer.default.createTransport({
       host: smtp.host,
@@ -538,7 +551,7 @@ export class PteroGateway {
         pass: smtp.password
       },
       tls: {
-        rejectUnauthorized: false
+        rejectUnauthorized: smtp.rejectUnauthorized
       }
     });
     const toAddress = Array.isArray(options.to) ? options.to.join(",") : options.to;
@@ -605,14 +618,9 @@ export class PteroGateway {
     return results;
   }
 
-  async exportAndEmailBackup(serverId: number, targetEmail?: string) {
+  async exportAndEmailBackup(serverId: number, targetEmail?: string, smtpConfig?: SmtpConfig) {
     this.logger.info(`Memulai auto-backup dan email untuk server ID ${serverId}...`);
-    let smtp;
-    try {
-      smtp = getPteroSmtpConfig();
-    } catch (err: any) {
-      throw new Error(`Gagal memuat konfigurasi SMTP: ${err.message}`);
-    }
+    const smtp = normalizeSmtpConfig(smtpConfig);
     const details = await this.getServerDetails(serverId);
     const serverName = details.name;
     const identifier = details.identifier;
@@ -685,9 +693,9 @@ export class PteroGateway {
           user: smtp.username,
           pass: smtp.password
         },
-        tls: {
-          rejectUnauthorized: false
-        }
+      tls: {
+        rejectUnauthorized: smtp.rejectUnauthorized
+      }
       });
       const mailOptions = {
         from: `"${smtp.fromName}" <${smtp.fromAddress}>`,
@@ -724,7 +732,7 @@ export class PteroGateway {
     };
   }
 
-  async backupAndEmailUserServers(userId: number) {
+  async backupAndEmailUserServers(userId: number, smtpConfig?: SmtpConfig) {
     this.logger.info(`Mencari server untuk User ID ${userId}...`);
     const listRes = await this.application.servers.list();
     const data = getCollection(listRes);
@@ -741,7 +749,7 @@ export class PteroGateway {
       const attrs = getDataAttributes(server);
       const serverId = Number(attrs.id);
       try {
-        const res = await this.exportAndEmailBackup(serverId);
+        const res = await this.exportAndEmailBackup(serverId, undefined, smtpConfig);
         results.push({ serverId, success: true, details: res });
       } catch (err: any) {
         this.logger.error(`Gagal mencadangkan server ID ${serverId}: ${err.message}`);
@@ -899,14 +907,14 @@ export class PteroServerHandle {
   get files() {
     return {
       list: (directory = "/") => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/files/list?directory=${encodeURIComponent(directory)}` }),
-      read: (file: string) => this.gateway.request<string>({ api: "client", path: `/servers/${this.identifier}/files/contents?file=${encodeURIComponent(file)}`, responseType: "text" }),
+      read: (file: string) => this.gateway.request<string>({ api: "client", path: `/servers/${this.identifier}/files/contents?file=${encodeURIComponent(file)}`, responseType: "text", rejectHtml: true }),
       write: (file: string, content: string) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/files/write?file=${encodeURIComponent(file)}`, body: content, contentType: "text" }),
       delete: (root: string, files: string[]) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/files/delete`, body: { root, files } }),
       mkdir: (root: string, name: string) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/files/create-folder`, body: { root, name } }),
       rename: (root: string, files: Array<{ from: string; to: string }>) => this.gateway.request<any>({ api: "client", method: "PUT", path: `/servers/${this.identifier}/files/rename`, body: { root, files } }),
       compress: (root: string, files: string[]) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/files/compress`, body: { root, files } }),
       decompress: (root: string, file: string) => this.gateway.request<any>({ api: "client", method: "POST", path: `/servers/${this.identifier}/files/decompress`, body: { root, file } }),
-      download: (file: string) => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/files/pull?file=${encodeURIComponent(file)}` }),
+      download: (file: string) => this.gateway.request<any>({ api: "client", path: `/servers/${this.identifier}/files/download?file=${encodeURIComponent(file)}` }),
       json: {
         read: async <T = unknown>(file: string) => JSON.parse(await this.files.read(file)) as T,
         write: (file: string, data: unknown, space = 2) => this.files.write(file, JSON.stringify(data, null, space))
@@ -1089,36 +1097,29 @@ export class PteroScheduleBuilder {
   }
 }
 
-function getPteroSmtpConfig() {
-  const envPath = "/var/www/pterodactyl/.env";
-  if (!fs.existsSync(envPath)) {
-    throw new Error("Pterodactyl environment file tidak ditemukan di /var/www/pterodactyl/.env");
+function normalizeSmtpConfig(value: SmtpConfig | undefined): Required<Pick<SmtpConfig, "host" | "port" | "username" | "password" | "fromAddress" | "fromName" | "rejectUnauthorized">> & Pick<SmtpConfig, "encryption"> {
+  const host = value?.host?.trim();
+  const username = value?.username?.trim();
+  const password = value?.password;
+  const fromAddress = value?.fromAddress?.trim() || username;
+  const fromName = value?.fromName?.trim() || "Pterodactyl Gateway";
+  if (!host || !value || !Number.isInteger(value.port) || value.port < 1 || value.port > 65535 || !username || !password) {
+    throw new PteroError({
+      code: "SMTP_CONFIG_REQUIRED",
+      message: "Konfigurasi SMTP eksplisit dan lengkap wajib diisi.",
+      hint: "Sediakan host, port, username, password, dan opsional fromAddress saat memanggil fitur email."
+    });
   }
-  const content = fs.readFileSync(envPath, "utf-8");
-  const config: Record<string, string> = {};
-  content.split("\n").forEach(line => {
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith("#") && trimmed.includes("=")) {
-      const parts = trimmed.split("=");
-      const key = parts[0]!.trim();
-      let val = parts.slice(1).join("=").trim();
-      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-        val = val.slice(1, -1);
-      }
-      config[key] = val;
-    }
-  });
-  const host = config.MAIL_HOST;
-  const port = config.MAIL_PORT;
-  const username = config.MAIL_USERNAME;
-  const password = config.MAIL_PASSWORD;
-  const encryption = config.MAIL_ENCRYPTION;
-  const fromAddress = config.MAIL_FROM_ADDRESS;
-  const fromName = config.MAIL_FROM_NAME || "Pterodactyl Panel";
-  if (!host || !port || !username || !password) {
-    throw new Error("SMTP configuration tidak lengkap di Pterodactyl .env");
-  }
-  return { host, port: Number(port), username, password, encryption, fromAddress, fromName };
+  return {
+    host,
+    port: value.port,
+    username,
+    password,
+    encryption: value.encryption,
+    fromAddress: fromAddress ?? username,
+    fromName,
+    rejectUnauthorized: value.rejectUnauthorized ?? true
+  };
 }
 
 function cleanupLocalFiles(tarPath: string, extractDir: string, zipPath: string) {

@@ -27,7 +27,7 @@ export class PteroLogger {
   }
 
   log(level: LogLevel, message: string) {
-    if (!this.enabled && level !== "error") return;
+    if (!this.enabled) return;
     const formatted = this.format(level, message);
     switch (level) {
       case "error": console.error(formatted); break;

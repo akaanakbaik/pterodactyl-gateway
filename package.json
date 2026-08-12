@@ -1,6 +1,6 @@
 {
   "name": "@akaanakbaik/pterodactyl-gateway",
-  "version": "1.0.3",
+  "version": "1.4.1",
   "description": "Full-featured TypeScript SDK untuk Pterodactyl Panel. Fokus pada kemudahan integrasi untuk developer membangun dashboard, bot, dan sistem otomasi panel yang kompleks.",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,6 +19,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "BLUEPRINT.md",
     "add-promt.md",
     "LICENSE"
@@ -30,14 +31,14 @@
     "chmod:bin": "node -e \"const fs=require('fs'); for (const f of ['dist/cli.js','dist/cli-entry.js','dist/wizard-cli.js']) if (fs.existsSync(f)) fs.chmodSync(f, 0o755)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/*.test.js",
-    "test:cli": "npm run build && node dist/cli-entry.js help",
+    "test:cli": "npm run build && node dist/cli-entry.js help && node dist/cli-entry.js version --json && node dist/cli-entry.js self-check --json && node dist/cli-entry.js release-check --json",
     "test:pack": "npm run build && npm pack --dry-run",
     "test:release": "node scripts/release-guard.js",
     "security:audit": "npm audit --audit-level=high",
     "ci": "npm run verify && npm run security:audit",
     "cli": "node dist/cli-entry.js",
     "wizard": "node dist/wizard-cli.js",
-    "verify": "npm run typecheck && npm test && npm run test:cli && npm run test:pack",
+    "verify": "npm run typecheck && npm test && npm run test:cli && npm run test:pack && npm run test:release",
     "prepublishOnly": "npm run verify"
   },
   "keywords": [

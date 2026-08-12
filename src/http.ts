@@ -21,8 +21,8 @@ export type RetryConfig = {
 };
 
 const DEFAULT_RETRY_CONFIG: Required<RetryConfig> = {
-  retries: 0,
-  baseDelay: 1000,
+  retries: 2,
+  baseDelay: 500,
   maxDelay: 10000,
   retryOn: [429, 502, 503, 504]
 };
@@ -42,7 +42,7 @@ export class HttpCore {
       maxDelay: config.retry?.maxDelay ?? DEFAULT_RETRY_CONFIG.maxDelay,
       retryOn: config.retry?.retryOn ?? DEFAULT_RETRY_CONFIG.retryOn
     };
-    this.logger = new PteroLogger(config.debug ?? true);
+    this.logger = new PteroLogger(config.debug ?? false);
   }
 
   async request<T = unknown>(options: PteroRequestOptions): Promise<T> {
@@ -62,7 +62,7 @@ export class HttpCore {
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         if (error instanceof PteroError && this.retryConfig.retryOn.includes(error.status ?? 0) && attempt < maxAttempts) {
-          const delay = this.calculateDelay(attempt);
+          const delay = this.calculateDelay(attempt, error.retryAfter);
           this.logger.warn(`Retry ${attempt}/${this.retryConfig.retries} setelah ${delay}ms (${error.code})`);
           await sleep(delay);
           continue;
@@ -105,7 +105,19 @@ export class HttpCore {
           message: extractMessage(data) ?? `Request gagal dengan status ${response.status}.`,
           status: response.status,
           hint: buildStatusHint(response.status, options.api),
-          raw: data
+          raw: data,
+          retryAfter: parseRetryAfter(response.headers.get("retry-after"))
+        });
+        this.logger.error(`[${err.code}] ${err.message}`);
+        throw err;
+      }
+
+      if (options.rejectHtml && isHtmlDocument(text)) {
+        const err = new PteroError({
+          code: "UNEXPECTED_TEXT_RESPONSE",
+          message: "Panel mengembalikan dokumen HTML, bukan konten file.",
+          hint: "Cek path file, identifier server, dan sesi Client API.",
+          raw: text
         });
         this.logger.error(`[${err.code}] ${err.message}`);
         throw err;
@@ -136,7 +148,8 @@ export class HttpCore {
     }
   }
 
-  private calculateDelay(attempt: number): number {
+  private calculateDelay(attempt: number, retryAfter?: number): number {
+    if (retryAfter !== undefined) return Math.min(retryAfter, this.retryConfig.maxDelay);
     const exponential = this.retryConfig.baseDelay * Math.pow(2, attempt - 1);
     const jitter = Math.random() * this.retryConfig.baseDelay * 0.5;
     return Math.min(exponential + jitter, this.retryConfig.maxDelay);
@@ -145,6 +158,15 @@ export class HttpCore {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const target = Date.parse(value);
+  if (Number.isNaN(target)) return undefined;
+  return Math.max(0, target - Date.now());
 }
 
 function buildBody(body: unknown, contentType: "json" | "text"): BodyInit | undefined {
@@ -159,6 +181,10 @@ function safeJson(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+function isHtmlDocument(value: string): boolean {
+  return /^\s*(?:<!doctype\s+html|<html[\s>])/i.test(value);
 }
 
 function extractMessage(value: unknown): string | undefined {

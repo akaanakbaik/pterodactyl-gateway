@@ -9,6 +9,32 @@
 
 [**npm**](https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway) · [**GitHub**](https://github.com/akaanakbaik/pterodactyl-gateway)
 
+> Versi stabil saat ini: **1.4.1**.
+
+## Navigasi
+
+- [Install](#install)
+- [SDK usage](#sdk-usage)
+- [Integration helpers](#integration-helpers)
+- [Keamanan](#keamanan--penggunaan-terbuka)
+- [Troubleshooting](#troubleshooting)
+
+## Install
+
+```bash
+npm install @akaanakbaik/pterodactyl-gateway
+```
+
+SDK membutuhkan Node.js 18 atau lebih baru.
+
+## SDK usage
+
+Gunakan `createPtero()` dengan domain panel dan API key minimum yang diperlukan. Application API Key digunakan untuk administrasi panel; Client API Key digunakan untuk operasi server milik pengguna.
+
+## Integration helpers
+
+Helper `createIntegrationServerInput()` dan `getIntegrationKinds()` membantu membentuk input deployment untuk bot WhatsApp, Telegram, Discord, dan integrasi lain. Gunakan `smart.servers.preview()` atau opsi `dryRun` sebelum deployment baru.
+
 ---
 
 ## 1. Inisialisasi & Diagnostik
@@ -22,7 +48,7 @@ const ptero = createPtero({
   domain: "panel.example.com",
   ptla: "ptla_your_application_key",
   ptlc: "ptlc_your_client_key",
-  debug: true
+  debug: false
 });
 ```
 
@@ -240,7 +266,10 @@ await ptero.smart.servers.changeNestEgg(18, {
   nestId: 5,
   eggId: 15,
   dockerImage: "ghcr.io/parkervcp/yolks:nodejs_22",
-  startup: "npm start"
+  startup: "npm start",
+  environment: {
+    CMD_RUN: "npm start"
+  }
 });
 ```
 
@@ -343,6 +372,14 @@ const config = await server.files.json.read("/config.json");
 console.log(config);
 ```
 
+### Dapatkan URL Download File
+```typescript
+const result = await server.files.download("/index.js");
+console.log(result.attributes.url);
+```
+
+`files.read()` menolak respons HTML fallback dari panel agar halaman error atau login tidak terbaca sebagai isi file.
+
 ---
 
 ## 8. Pengelola Port & Jaringan Server
@@ -442,7 +479,7 @@ await server.backups.delete("backup_uuid_xxx");
 
 ## 11. WebSocket Real-time Stream
 
-Mendengarkan event status server, log konsol, dan penggunaan memori/CPU secara real-time. Dilengkapi mekanisme auto-reconnect dan auto token-refresh jika sambungan terputus.
+Mendengarkan event status server, log konsol, dan penggunaan memori/CPU secara real-time. Pada runtime Node.js, SDK otomatis mengirim header `Origin` panel agar kompatibel dengan Wings yang memvalidasi origin.
 
 ```typescript
 const ws = server.websocket.create();
@@ -484,11 +521,21 @@ await schedule.save();
 
 ## 13. SMTP Email & Auto Backup Exporter (.zip)
 
-Mengirim email pemberitahuan ke pelanggan dan melakukan pencadangan zip otomatis secara eksternal. Secara otomatis membaca konfigurasi SMTP Host, Port, Username, Password, dan Pengirim dari file `/var/www/pterodactyl/.env` di server panel Anda.
+Mengirim email pemberitahuan ke pelanggan dan melakukan pencadangan zip otomatis secara eksternal. SMTP harus selalu diberikan secara eksplisit; SDK tidak membaca file `.env` panel dan memverifikasi sertifikat TLS secara default.
 
 ### Kirim Email Tertarget ke Pengguna
 ```typescript
+const smtp = {
+  host: "smtp.example.com",
+  port: 587,
+  username: "no-reply@example.com",
+  password: process.env.SMTP_PASSWORD,
+  fromAddress: "no-reply@example.com",
+  fromName: "Akadev Panel"
+};
+
 await ptero.email.sendToUser(1, {
+  smtp,
   subject: "Pengumuman Pembayaran Server",
   html: "<h2>Halo</h2><p>Server Anda akan segera jatuh tempo dalam 3 hari.</p>",
   attachments: [
@@ -503,6 +550,7 @@ await ptero.email.sendToUser(1, {
 ### Kirim Email Broadcast Massal ke Seluruh Pengguna
 ```typescript
 await ptero.email.broadcast({
+  smtp,
   subject: "Pemeliharaan Node Server Indonesia",
   html: "<h3>Pemberitahuan Sistem</h3><p>Node ID 1 akan dimatikan sementara untuk pemeliharaan RAM.</p>"
 });
@@ -511,12 +559,12 @@ await ptero.email.broadcast({
 ### Auto Backup Exporter via Email (.zip)
 Secara otomatis membuat backup di panel dengan menyaring folder-folder berat (`node_modules`, `vendor`, `cache`, `tmp`, `temp`, `.git`), mengunduh file hasil backup, mengompres ulangnya ke ekstensi `.zip`, mengirimkannya langsung ke email pemilik server, dan menghapus sisa file backup di panel.
 ```typescript
-await ptero.exportAndEmailBackup(18);
+await ptero.exportAndEmailBackup(18, undefined, smtp);
 ```
 
 ### Backup Massal Pengguna
 ```typescript
-await ptero.backupAndEmailUserServers(1);
+await ptero.backupAndEmailUserServers(1, smtp);
 ```
 
 ---
@@ -524,7 +572,17 @@ await ptero.backupAndEmailUserServers(1);
 ## Keamanan & Penggunaan Terbuka
 - Simpan kredensial Anda di environment variables (`PTERO_DOMAIN`, `PTERO_PTLA`, `PTERO_PTLC`).
 - Gunakan `PteroGateway.fromEnv()` untuk pemanggilan otomatis dari konfigurasi environment variables.
-- SDK ini dipastikan bebas dari baris komentar di seluruh source kodenya.
+- Logging SDK tidak aktif secara default. Aktifkan `debug: true` hanya saat diagnosis.
+- Berikan konfigurasi SMTP secara eksplisit dan jangan menonaktifkan verifikasi TLS kecuali Anda memahami risikonya.
+
+## Troubleshooting
+
+| Kondisi | Tindakan |
+|---|---|
+| `UNEXPECTED_TEXT_RESPONSE` saat `files.read()` | Verifikasi path file, identifier server, dan Client API Key. Respons HTML panel sengaja ditolak agar tidak diperlakukan sebagai konten file. |
+| `RATE_LIMITED` | SDK melakukan retry untuk status yang dapat dipulihkan. Kurangi paralelisme bila panel tetap membatasi request. |
+| WebSocket gagal terkoneksi | Pastikan Wings dapat diakses dari runtime aplikasi. SDK Node.js mengirim Origin domain panel secara otomatis. |
+| `SMTP_CONFIG_REQUIRED` | Sertakan `smtp` lengkap saat memakai email atau backup-email. |
 
 ---
 

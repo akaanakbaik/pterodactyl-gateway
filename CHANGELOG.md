@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 1.4.1 (2026-08-12)
+
+### Perbaikan
+- Perbaiki `files.download()` agar menggunakan endpoint download Client API dengan method GET.
+- Tolak respons HTML fallback pada `files.read()` agar halaman panel tidak terbaca sebagai konten file.
+- Perbaiki WebSocket Node.js dengan header Origin panel dan koneksi yang selesai setelah socket benar-benar terbuka.
+- Pertahankan environment server dan terapkan default variable egg saat `changeNestEgg()` dijalankan.
+- Hapus `updateInventory()` yang mengarahkan PATCH ke endpoint panel tidak valid.
+- Jadikan logging nonaktif secara default dan tingkatkan retry dengan backoff, jitter, serta dukungan Retry-After.
+- Wajibkan konfigurasi SMTP eksplisit, aktifkan verifikasi TLS secara default, dan hapus pembacaan `.env` panel.
+- Sinkronkan metadata CLI, versi package, regression test, dan README.
+
 ## 1.4.0 (2026-06-18)
 
 ### Perbaikan

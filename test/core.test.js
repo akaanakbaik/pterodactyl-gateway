@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { WebSocketServer } from "ws";
 import { 
   createPtero, 
   explainError, 
@@ -265,4 +266,127 @@ test("getServerDetails mengembalikan detail lengkap", async () => {
   assert.equal(details.nestName, "NodeJS");
   assert.equal(details.eggName, "NodeJS Egg");
   assert.equal(details.userName, "testuser");
+});
+
+
+test("file manager download memakai endpoint download yang benar", async () => {
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method });
+    return json({ attributes: { url: "https://download.example.com/file" } });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  const result = await ptero.server("abc123").files.download("/folder/test.txt");
+  assert.equal(result.attributes.url, "https://download.example.com/file");
+  assert.equal(calls[0].method, "GET");
+  assert.match(calls[0].url, /files\/download\?file=%2Ffolder%2Ftest.txt/);
+});
+
+test("file manager read menolak fallback HTML", async () => {
+  const fetcher = async () => new Response("<!DOCTYPE html><html><body>Panel</body></html>", {
+    status: 200,
+    headers: { "Content-Type": "text/html" }
+  });
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  await assert.rejects(
+    () => ptero.server("abc123").files.read("/missing.txt"),
+    error => error instanceof PteroError && error.code === "UNEXPECTED_TEXT_RESPONSE"
+  );
+});
+
+test("changeNestEgg mempertahankan environment yang diperlukan", async () => {
+  const calls = [];
+  const fetcher = async (url, init) => {
+    const endpoint = String(url);
+    calls.push({ url: endpoint, method: init?.method, body: init?.body });
+    if (endpoint.includes("/nests/5/eggs/15")) {
+      return json({
+        data: {
+          attributes: {
+            id: 15,
+            startup: "node index.js",
+            docker_images: { node: "ghcr.io/example/node:20" },
+            relationships: {
+              variables: {
+                data: [
+                  { attributes: { env_variable: "CMD_RUN", default_value: "npm start" } },
+                  { attributes: { env_variable: "OPTIONAL_VALUE", default_value: "" } }
+                ]
+              }
+            }
+          }
+        }
+      });
+    }
+    if (endpoint.includes("/servers/1") && init?.method === "GET") {
+      return json({ data: { attributes: { container: { environment: { CMD_RUN: "node app.js", EXISTING: "value" } } } } });
+    }
+    return new Response(null, { status: 204 });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptla: "ptla_test", fetcher });
+  const result = await ptero.smart.servers.changeNestEgg(1, { nestId: 5, eggId: 15 });
+  assert.equal(result.environment.CMD_RUN, "node app.js");
+  const update = calls.find(call => call.url.includes("/servers/1/startup"));
+  assert.ok(update);
+  const payload = JSON.parse(update.body);
+  assert.equal(payload.image, "ghcr.io/example/node:20");
+  assert.equal(payload.skip_scripts, false);
+  assert.deepEqual(payload.environment, { CMD_RUN: "node app.js", OPTIONAL_VALUE: "" });
+});
+
+test("retry menghormati Retry-After dan berhasil pada percobaan berikutnya", async () => {
+  let attempts = 0;
+  const fetcher = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return new Response(JSON.stringify({ errors: [{ detail: "Terlalu banyak request" }] }), {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Retry-After": "0" }
+      });
+    }
+    return json({ data: { attributes: { id: 1 } } });
+  };
+  const ptero = createPtero({
+    domain: "https://panel.example.com",
+    ptla: "ptla_test",
+    fetcher,
+    retry: { retries: 1, baseDelay: 1, maxDelay: 1 }
+  });
+  const user = await ptero.application.users.get(1);
+  assert.equal(user.data.attributes.id, 1);
+  assert.equal(attempts, 2);
+});
+
+test("email tanpa SMTP eksplisit mengembalikan error konfigurasi", async () => {
+  const ptero = createPtero({ domain: "https://panel.example.com", ptla: "ptla_test" });
+  await assert.rejects(
+    () => ptero.email.send({ to: "user@example.com", subject: "Test" }),
+    error => error instanceof PteroError && error.code === "SMTP_CONFIG_REQUIRED"
+  );
+});
+
+test("application servers tidak mengekspos updateInventory yang tidak valid", () => {
+  const ptero = createPtero({ domain: "https://panel.example.com", ptla: "ptla_test" });
+  assert.equal("updateInventory" in ptero.application.servers, false);
+});
+
+test("WebSocket Node.js mengirim Origin dan connect menunggu koneksi terbuka", async () => {
+  const server = new WebSocketServer({ port: 0 });
+  await new Promise(resolve => server.once("listening", resolve));
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  let origin = "";
+  server.on("connection", (socket, request) => {
+    origin = String(request.headers.origin ?? "");
+    socket.on("message", () => socket.send(JSON.stringify({ event: "auth success", args: [] })));
+  });
+  const fetcher = async () => json({ data: { token: "token", socket: `ws://127.0.0.1:${port}` } });
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  const websocket = ptero.server("abc123").websocket.create();
+  await websocket.connect();
+  assert.equal(origin, "https://panel.example.com");
+  const closed = new Promise(resolve => server.once("close", resolve));
+  websocket.close();
+  server.close();
+  await closed;
 });

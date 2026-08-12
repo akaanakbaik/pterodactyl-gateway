@@ -54,6 +54,7 @@ export function releaseCheckCommand(jsonMode: boolean) {
     sourceMode ? check("lock root version matches", lock.packages?.[""]?.version === pkg.version, `${lock.packages?.[""]?.version} / ${pkg.version}`) : check("lock root version matches", true, "skipped outside source checkout"),
     check("dist included", Array.isArray(pkg.files) && pkg.files.includes("dist"), JSON.stringify(pkg.files ?? [])),
     check("README included", Array.isArray(pkg.files) && pkg.files.includes("README.md"), JSON.stringify(pkg.files ?? [])),
+    check("CHANGELOG included", Array.isArray(pkg.files) && pkg.files.includes("CHANGELOG.md"), JSON.stringify(pkg.files ?? [])),
     check("license MIT", pkg.license === "MIT", String(pkg.license ?? "")),
     check("prepublishOnly verify", String(pkg.scripts?.prepublishOnly ?? "").includes("verify"), String(pkg.scripts?.prepublishOnly ?? "")),
     check("test:release exists", Boolean(pkg.scripts?.["test:release"]), String(pkg.scripts?.["test:release"] ?? "")),
