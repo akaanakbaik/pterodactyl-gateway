@@ -100,7 +100,7 @@ Melakukan operasi CRUD penuh pada akun admin/pengguna panel.
 ```typescript
 const user = await ptero.smart.users.getOrCreate({
   username: "customer_akadev",
-  email: "customer@akadev.me",
+  email: "customer@akaa.dev",
   password: "auto",
   administrator: false
 });
@@ -111,7 +111,7 @@ console.log(user.id, user.username, user.email);
 ```typescript
 const newUser = await ptero.application.users.create({
   username: "user_baru",
-  email: "baru@akadev.me",
+  email: "baru@akaa.dev",
   password: "PasswordRahasia123!",
   root_admin: false,
   first_name: "User",
@@ -134,7 +134,7 @@ console.log(userDetail.attributes.username);
 
 ### Cari User Berdasarkan Email
 ```typescript
-const foundUser = await ptero.application.users.find("baru@akadev.me");
+const foundUser = await ptero.application.users.find("baru@akaa.dev");
 console.log(foundUser);
 ```
 
@@ -142,7 +142,7 @@ console.log(foundUser);
 ```typescript
 const updated = await ptero.application.users.update(1, {
   username: "user_diupdate",
-  email: "update@akadev.me",
+  email: "update@akaa.dev",
   first_name: "Nama",
   last_name: "Baru"
 });
@@ -244,7 +244,7 @@ Mendeploy server baru secara otomatis, mengubah spesifikasi, pemilik, dan nest/e
 const preview = await ptero.smart.servers.preview({
   name: "Server Uji Coba",
   description: "Server test deploy",
-  email: "customer@akadev.me",
+  email: "customer@akaa.dev",
   autoCreateUser: true,
   nodeId: 1,
   nestId: 5,
@@ -259,7 +259,7 @@ console.log(preview.payload, preview.allocation);
 const server = await ptero.smart.servers.create({
   name: "Server Game Akadev",
   description: "Dibuat otomatis oleh SDK",
-  email: "customer@akadev.me",
+  email: "customer@akaa.dev",
   autoCreateUser: true,
   nodeId: 1,
   nestId: 5,

@@ -36,7 +36,7 @@ Manage administrative users on the panel.
 ```typescript
 const user = await ptero.smart.users.getOrCreate({
   username: "customer_user",
-  email: "customer@akadev.me",
+  email: "customer@akaa.dev",
   password: "auto",
   administrator: false
 });
@@ -44,7 +44,7 @@ const user = await ptero.smart.users.getOrCreate({
 
 ### Find User by Email
 ```typescript
-const user = await ptero.application.users.find("customer@akadev.me");
+const user = await ptero.application.users.find("customer@akaa.dev");
 ```
 
 ---
@@ -57,7 +57,7 @@ Deploy servers with automatic allocation mappings and update specifications.
 ```typescript
 const server = await ptero.smart.servers.create({
   name: "Express API Server",
-  email: "customer@akadev.me",
+  email: "customer@akaa.dev",
   autoCreateUser: true,
   nodeId: 1,
   nestId: 5,
