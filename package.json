@@ -94,7 +94,7 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
-    "nodemailer": "^9.0.3",
+    "nodemailer": "^9.1.1",
     "ws": "^8.21.0"
   }
 }
