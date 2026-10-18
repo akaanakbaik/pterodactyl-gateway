@@ -315,9 +315,17 @@ Jika panel meminta environment variable tertentu saat membuat server, gateway me
 
 Otomatis melalui GitHub Actions:
 
-1. Tambahkan repository secret `NPM_TOKEN` dengan Automation token dari npm.
-2. Buat tag versi: `npm version patch && git push --follow-tags`.
-3. Workflow `.github/workflows/publish.yml` akan menjalankan `npm ci`, seluruh quality gate, lalu `npm publish --provenance --access public`.
+1. Buka <https://github.com/akaanakbaik/pterodactyl-gateway/settings/secrets/actions> lalu tambahkan secret `NPM_TOKEN` berisi granular access token npm dengan izin publish pada package `@akaanakbaik/pterodactyl-gateway`.
+2. Buat tag versi: `git tag v1.5.0 && git push origin v1.5.0`.
+3. Workflow `.github/workflows/publish.yml` menjalankan `npm ci`, seluruh quality gate, `npm publish --provenance --access public`, lalu membuat GitHub Release.
+
+Alternatif tanpa token adalah Trusted Publishing: daftarkan repository dan workflow `publish.yml` pada halaman package di npmjs.com, lalu hapus secret `NPM_TOKEN`. Workflow sudah memakai `id-token: write` sehingga provenance dan autentikasi OIDC bekerja otomatis.
+
+Uji workflow tanpa publikasi:
+
+```bash
+gh workflow run publish.yml -f dry-run=true
+```
 
 Manual dari VPS:
 

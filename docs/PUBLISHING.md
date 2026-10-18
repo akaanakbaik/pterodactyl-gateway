@@ -52,6 +52,15 @@ Workflow `.github/workflows/publish.yml` akan:
 
 Versi di `package.json`, `package-lock.json`, `src/version.ts`, README, dan CHANGELOG harus sama. Release guard akan gagal jika tidak sinkron.
 
+## Trusted Publishing tanpa token
+
+Cara ini menghindari penyimpanan token jangka panjang dan tetap menghasilkan provenance.
+
+1. Buka <https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway/access> lalu pilih **Trusted Publisher**.
+2. Pilih **GitHub Actions**, isi owner `akaanakbaik`, repository `pterodactyl-gateway`, workflow `publish.yml`, dan environment kosong.
+3. Hapus secret `NPM_TOKEN` bila sudah ada. Workflow tetap memakai `id-token: write` untuk OIDC.
+4. Pastikan runner memakai npm 11.5 atau lebih baru; workflow sudah memakai Node 24 yang memenuhinya.
+
 ## Cara manual dari VPS
 
 ```bash
