@@ -1022,6 +1022,7 @@ Membuat resource:
   create-server --name <name> --user-id 1 --node 1 --egg 15 --memory 1GB --disk 2GB --cpu 100 --yes
 
 Mengelola server:
+  delete-user <userId> --yes [--force]
   delete-server <serverId> --yes [--force]
   suspend <serverId> --yes
   unsuspend <serverId> --yes
