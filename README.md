@@ -1,636 +1,348 @@
-# Akadev Pterodactyl Gateway
+# @akaanakbaik/pterodactyl-gateway v1.5.0
 
-[![NPM Version](https://img.shields.io/npm/v/@akaanakbaik/pterodactyl-gateway.svg?style=flat-flat&color=brightgreen)](https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway)
-[![License](https://img.shields.io/github/license/akaanakbaik/pterodactyl-gateway.svg?style=flat-flat&color=blue)](https://github.com/akaanakbaik/pterodactyl-gateway/blob/main/LICENSE)
-[![Node Version](https://img.shields.io/node/v/@akaanakbaik/pterodactyl-gateway.svg?style=flat-flat)](https://nodejs.org)
-[![NPM Downloads](https://img.shields.io/npm/dm/@akaanakbaik/pterodactyl-gateway.svg?style=flat-flat)](https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway)
-[![CI](https://github.com/akaanakbaik/pterodactyl-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/akaanakbaik/pterodactyl-gateway/actions/workflows/ci.yml)
+Gateway Pterodactyl profesional untuk JavaScript dan TypeScript. Satu paket berisi SDK Application API, Client API, perencanaan kapasitas, WebSocket realtime, backup otomatis, email SMTP, dan CLI operasional.
 
-**SDK TypeScript & JavaScript Modern untuk Pterodactyl Panel dengan fitur Auto-Deployment, WebSocket Auto-Reconnect, Ekspor Backup Otomatis ke Email, dan Fluent Schedule Builder.**
+- Dukungan penuh **TypeScript**, **JavaScript**, **ESM**, dan **CommonJS**
+- Retry adaptif, rate limiter, circuit breaker, cache GET, dan metrik latensi
+- Perencanaan penempatan server berbasis matematika kapasitas node
+- Alur pembuatan server pintar: user, nest, egg, environment, allocation, dan validasi payload
+- Toolkit operasional: file manager, backup, schedule, database, network, console WebSocket
+- CLI lengkap untuk admin, otomasi, dan audit tanpa menulis kode
 
-[**npm**](https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway) · [**GitHub**](https://github.com/akaanakbaik/pterodactyl-gateway)
+Versi ini diuji langsung terhadap panel produksi `https://panel.akaa.dev` termasuk membuat, menjalankan, membackup, memindahkan kepemilikan, menggandakan, dan menghapus server.
 
-> Versi stabil saat ini: **1.4.2**.
+## Daftar isi
 
-## Navigasi
-
-- [Install](#install)
-- [SDK usage](#sdk-usage)
-- [Integration helpers](#integration-helpers)
-- [Keamanan](#keamanan--penggunaan-terbuka)
+- [Instalasi](#instalasi)
+- [Quick start](#quick-start)
+- [SDK](#sdk)
+- [Perencanaan kapasitas](#perencanaan-kapasitas)
+- [Operasi server](#operasi-server)
+- [Backup dan email](#backup-dan-email)
+- [WebSocket](#websocket)
+- [CLI](#cli)
+- [Konfigurasi](#konfigurasi)
+- [Kompatibilitas panel](#kompatibilitas-panel)
+- [Keamanan](#keamanan)
+- [Publish ke npm](#publish-ke-npm)
 - [Troubleshooting](#troubleshooting)
 
-## Install
+## Instalasi
 
 ```bash
 npm install @akaanakbaik/pterodactyl-gateway
 ```
 
-SDK membutuhkan Node.js 18 atau lebih baru.
+Requirement: Node.js 18 atau lebih baru. Dependensi runtime hanya `ws` dan `nodemailer`.
 
-## SDK usage
+## Quick start
 
-Gunakan `createPtero()` dengan domain panel dan API key minimum yang diperlukan. Application API Key digunakan untuk administrasi panel; Client API Key digunakan untuk operasi server milik pengguna.
+Buat Application API key (PTLA) dan Client API key (PTLC) dari panel, lalu simpan sebagai environment:
 
-## Status Kualitas
+```bash
+export PTERO_DOMAIN="https://panel.example.com"
+export PTERO_PTLA="ptla_xxxxxxxxxxxxxxxxx"
+export PTERO_PTLC="ptlc_xxxxxxxxxxxxxxxxx"
+```
 
-| Kontrol | Implementasi |
-|---|---|
-| Runtime yang diuji | Node.js 18, 20, dan 22 melalui GitHub Actions |
-| Quality gate | Typecheck, source guard, regression test, CLI smoke test, package smoke test, dan release guard |
-| Keamanan dependensi | Audit runtime dependency dijalankan pada CI |
-| Artefak | Tarball npm disimpan sebagai artefak CI selama 7 hari dan artefak release check selama 14 hari |
-| Kredensial | Tidak ada key panel, SMTP password, atau GitHub token yang boleh disimpan di source maupun workflow |
+Cek koneksi:
 
-## Integration helpers
+```bash
+npx ptero-gateway doctor
+```
 
-Helper `createIntegrationServerInput()` dan `getIntegrationKinds()` membantu membentuk input deployment untuk bot WhatsApp, Telegram, Discord, dan integrasi lain. Gunakan `smart.servers.preview()` atau opsi `dryRun` sebelum deployment baru.
+## SDK
 
----
+### TypeScript ESM
 
-## 1. Inisialisasi & Diagnostik
-
-Memulai koneksi ke Pterodactyl Panel menggunakan domain, Application API Key (PTLA) untuk tindakan admin, dan Client API Key (PTLC) untuk tindakan pengguna.
-
-```typescript
+```ts
 import { createPtero } from "@akaanakbaik/pterodactyl-gateway";
 
 const ptero = createPtero({
-  domain: "panel.example.com",
-  ptla: "ptla_your_application_key",
-  ptlc: "ptlc_your_client_key",
-  safeMode: true,
-  debug: false
+  domain: process.env.PTERO_DOMAIN!,
+  ptla: process.env.PTERO_PTLA!,
+  ptlc: process.env.PTERO_PTLC!
 });
-```
 
-### Retry Aman
-
-SDK hanya mengulang request `GET`, `HEAD`, `OPTIONS`, `PUT`, `PATCH`, dan `DELETE` secara otomatis. Request `POST` tidak akan diulang agar operasi create, command, atau tindakan tulis lain tidak terduplikasi. Gunakan `retryUnsafe: true` hanya jika endpoint POST Anda telah dirancang idempotent.
-
-```typescript
-await ptero.request({
-  api: "application",
-  method: "POST",
-  path: "/custom-idempotent-operation",
-  body: { requestId: "unik" },
-  retryUnsafe: true
-});
-```
-
-### Cek Koneksi (Laten & Mode)
-```typescript
-const conn = await ptero.connect();
-console.log(conn.ok, conn.mode, conn.latency);
-```
-
-### Analisis Doctor (Pengecekan Izin API)
-```typescript
 const report = await ptero.doctor();
-console.log(report.ok, report.checks);
+console.log(report.mode, report.capabilities);
 ```
 
----
+### JavaScript ESM
 
-## 2. Manajemen Pengguna (User Management)
+```js
+import { createPtero } from "@akaanakbaik/pterodactyl-gateway";
 
-Melakukan operasi CRUD penuh pada akun admin/pengguna panel.
+const ptero = createPtero.fromEnv();
+const nodes = await ptero.application.nodes.all();
+console.log(nodes.map(node => node.attributes.name));
+```
 
-### Buat User Baru (Smart Get or Create)
-```typescript
-const user = await ptero.smart.users.getOrCreate({
-  username: "customer_akadev",
-  email: "customer@akaa.dev",
-  password: "auto",
-  administrator: false
+### CommonJS
+
+```js
+const { createPtero } = require("@akaanakbaik/pterodactyl-gateway");
+
+async function main() {
+  const ptero = createPtero.fromEnv();
+  const servers = await ptero.listAllServers();
+  console.log(servers.length);
+}
+
+main();
+```
+
+### Konfigurasi lanjutan
+
+```ts
+const ptero = createPtero({
+  domain: "https://panel.example.com",
+  ptla: "ptla_xxx",
+  ptlc: "ptlc_xxx",
+  timeout: 20000,
+  safeMode: true,
+  retry: { retries: 3, baseDelay: 400, maxDelay: 10000, retryOn: [429, 502, 503, 504], retryOnNetwork: true },
+  rateLimit: { requestsPerSecond: 25, burst: 10 },
+  cache: { enabled: true, ttl: 15000, maxEntries: 500 },
+  circuitBreaker: { enabled: true, failureThreshold: 6, resetTimeout: 30000, halfOpenMax: 1 },
+  hooks: {
+    onRequest: context => console.log("->", context.method, context.url),
+    onResponse: context => console.log("<-", context.status, `${context.duration}ms`),
+    onRetry: context => console.log("retry", context.attempt, context.delay),
+    onError: context => console.error(context.error)
+  },
+  defaultNestId: 5,
+  defaultEggId: 15,
+  nodeStrategy: "balanced"
 });
-console.log(user.id, user.username, user.email);
 ```
 
-### Buat User Baru (Raw)
-```typescript
-const newUser = await ptero.application.users.create({
-  username: "user_baru",
-  email: "baru@akaa.dev",
-  password: "PasswordRahasia123!",
-  root_admin: false,
-  first_name: "User",
-  last_name: "Baru"
-});
-console.log(newUser);
+### Metrik dan cache
+
+```ts
+const metrics = ptero.metrics();
+console.log(metrics.requests, metrics.latency.p95, metrics.cacheHits, metrics.breaker.state);
+
+ptero.flushCache();
 ```
 
-### Ambil Daftar User (Pagination)
-```typescript
-const list = await ptero.application.users.list(1);
-console.log(list.data);
+Semua request non-GET otomatis menginvalidasi cache GET agar data tidak basi setelah operasi tulis.
+
+### Helper
+
+```ts
+import { formatBytes, formatMiB, parseCron, planPlacement, renderEmailTemplate, slugify } from "@akaanakbaik/pterodactyl-gateway";
 ```
 
-### Detail User Spesifik
-```typescript
-const userDetail = await ptero.application.users.get(1);
-console.log(userDetail.attributes.username);
+## Perencanaan kapasitas
+
+Hitung kapasitas riil node, ramalkan jumlah server yang muat, dan pilih node terbaik sebelum membuat server.
+
+```ts
+const capacity = await ptero.capacity();
+console.table(capacity.map(node => ({
+  node: node.name,
+  ram: `${node.memory.percent}%`,
+  disk: `${node.disk.percent}%`,
+  port: `${node.allocations.assigned}/${node.allocations.total}`
+})));
+
+const forecast = await ptero.forecast({ memory: "2GB", disk: "5GB", cpu: 200, databases: 1, allocations: 1, backups: 1 });
+
+const plan = await ptero.planServer(
+  { memory: "2GB", disk: "5GB", cpu: 200, databases: 1, allocations: 1, backups: 1 },
+  { strategy: "balanced", reservePercent: 10 }
+);
+
+console.log(plan.plan.selected, plan.allocations);
 ```
 
-### Cari User Berdasarkan Email
-```typescript
-const foundUser = await ptero.application.users.find("baru@akaa.dev");
-console.log(foundUser);
+Strategi yang tersedia: `balanced`, `pack`, `spread`, `memory`, `disk`, `ports`.
+
+Bin packing untuk beberapa server sekaligus:
+
+```ts
+const assignment = await ptero.packServers([specA, specB, specC], "pack");
 ```
 
-### Update Data User
-```typescript
-const updated = await ptero.application.users.update(1, {
-  username: "user_diupdate",
-  email: "update@akaa.dev",
-  first_name: "Nama",
-  last_name: "Baru"
-});
-console.log(updated);
+Model matematika yang dipakai:
+
+- Kapasitas efektif node: `limit x (1 + overallocate / 100)`, dengan `limit = 0` berarti tak terbatas
+- Headroom per dimensi: `(kapasitas - terpakai - reserve) / kebutuhan`
+- Skor gabungan memakai geometric mean, log-scaling, dan penalti fragmentasi port
+- Fragmentasi port dihitung dari jumlah blok port kosong yang terpisah
+
+## Operasi server
+
+```ts
+const server = ptero.server("6e04fb6f");
+
+await server.resources();
+await server.files.write("/index.js", "console.log('hi')");
+await server.files.list("/");
+await server.files.uploadFromFile("/", "./dist/app.zip");
+await server.files.downloadToFile("/app.zip", "./app.zip");
+
+await server.start();
+await server.waitForState("running", { timeout: 60000 });
+await server.command("npm start");
+
+const backup = await server.backups.createAndWait("harian");
+await server.createScheduleBuilder()
+  .setName("restart malam")
+  .setCron("0 3 * * *")
+  .addPowerTask("restart")
+  .save();
 ```
 
-### Hapus User
-```typescript
-await ptero.application.users.delete(1, true);
-```
+Pembuatan server pintar:
 
----
-
-## 3. Manajemen Lokasi & Node
-
-Melihat lokasi wilayah dan mengelola node/alokasi port server Pterodactyl.
-
-### List & Detail Lokasi
-```typescript
-const locations = await ptero.application.locations.list();
-console.log(locations.data);
-
-const location = await ptero.application.locations.get(1);
-console.log(location);
-```
-
-### List & Detail Node
-```typescript
-const nodes = await ptero.application.nodes.list();
-console.log(nodes.data);
-
-const node = await ptero.application.nodes.get(1);
-console.log(node.attributes.name);
-
-const nodeConfig = await ptero.application.nodes.config(1);
-console.log(nodeConfig);
-```
-
-### Manajemen Alokasi Port Node
-```typescript
-const allocations = await ptero.application.nodes.allocations.list(1);
-console.log(allocations.data);
-
-await ptero.application.nodes.allocations.create(1, {
-  ip: "192.168.1.100",
-  ports: ["25565", "25566"]
-});
-
-await ptero.application.nodes.allocations.delete(1, 100, true);
-```
-
----
-
-## 4. Manajemen Nest & Egg
-
-Membaca struktur Nest (kategori) dan Egg (konfigurasi startup server). Resolver otomatis meneruskan error bila Nest atau Egg yang diminta tidak ada; SDK tidak lagi memilih ID fallback secara diam-diam.
-
-### List & Detail Nest
-```typescript
-const nests = await ptero.application.nests.list();
-console.log(nests.data);
-
-const nest = await ptero.application.nests.get(5);
-console.log(nest.attributes.name);
-
-const nestByName = await ptero.application.nests.find("nodejs");
-console.log(nestByName.id);
-```
-
-### List & Detail Egg
-```typescript
-const eggs = await ptero.application.nests.eggs.list(5);
-console.log(eggs.data);
-
-const egg = await ptero.application.nests.eggs.get(5, 15);
-console.log(egg.attributes.name);
-
-const eggByName = await ptero.application.nests.eggs.find(5, "Egg Bot Wa");
-console.log(eggByName.id);
-```
-
----
-
-## Cakupan API
-
-| Kelompok | Kemampuan utama |
-|---|---|
-| Application API | User, lokasi, node, allocation, nest, egg, provisioning server, limits, ownership, dan administrasi server |
-| Client API | Account, API key, power, command, resource, file, startup, network, database, backup, schedule, dan WebSocket |
-| Smart helper | Preview, dry-run, auto user, auto environment, preset resource, resolver Nest/Egg, dan allocation otomatis |
-| Operasi aman | Safe mode, retry idempotent-aware, error terstruktur, validasi input, dan pagination dengan batas aman |
-
-## 5. Manajemen Server (Administrasi & Deployment)
-
-Mendeploy server baru secara otomatis, mengubah spesifikasi, pemilik, dan nest/egg. Pemilihan allocation otomatis memeriksa seluruh halaman allocation node hingga batas aman 100 halaman.
-
-### Smart Server Preview (Uji Payload Sebelum Deploy)
-```typescript
-const preview = await ptero.smart.servers.preview({
-  name: "Server Uji Coba",
-  description: "Server test deploy",
-  email: "customer@akaa.dev",
+```ts
+const result = await ptero.smart.servers.create({
+  name: "wa-bot",
+  email: "owner@example.com",
   autoCreateUser: true,
-  nodeId: 1,
-  nestId: 5,
-  eggId: 15,
-  preset: "mini"
-});
-console.log(preview.payload, preview.allocation);
-```
-
-### Deploy Server Baru
-```typescript
-const server = await ptero.smart.servers.create({
-  name: "Server Game Akadev",
-  description: "Dibuat otomatis oleh SDK",
-  email: "customer@akaa.dev",
-  autoCreateUser: true,
+  description: "WhatsApp bot",
   nodeId: 1,
   nestId: 5,
   eggId: 15,
   preset: "standard",
+  allocation: { strategy: "best-fit" },
   startOnCompletion: true
-});
-console.log(server.id, server.identifier);
-```
-
-### Ambil Detail Lengkap Server Admin
-```typescript
-const details = await ptero.getServerDetails(18);
-console.log(details.name, details.nodeName, details.userEmail);
-```
-
-### Update Spesifikasi / Limits Server
-```typescript
-await ptero.smart.servers.updateSpecs(18, {
-  memory: "4GB",
-  disk: "10GB",
-  cpu: "200%",
-  databases: 2,
-  backups: 2,
-  allocations: 1
+}, {
+  waitForInstall: 600000,
+  onProgress: step => console.log(`[${step.percent}%] ${step.message}`)
 });
 ```
 
-### Pindahkan Kepemilikan Server
-```typescript
-await ptero.smart.servers.changeOwnership(18, {
-  userId: 2
-});
-```
+## Backup dan email
 
-### Ubah Nest & Egg Server
-```typescript
-await ptero.smart.servers.changeNestEgg(18, {
-  nestId: 5,
-  eggId: 15,
-  dockerImage: "ghcr.io/parkervcp/yolks:nodejs_22",
-  startup: "npm start",
-  environment: {
-    CMD_RUN: "npm start"
-  }
-});
-```
-
-### Kontrol Status Server (Admin)
-```typescript
-await ptero.application.servers.suspend(18);
-await ptero.application.servers.unsuspend(18);
-await ptero.application.servers.reinstall(18);
-```
-
-### Hapus Server (Permanen & Paksa)
-```typescript
-await ptero.application.servers.delete(18, true);
-```
-
-### Operasi Batch (Multi Server)
-```typescript
-await ptero.batchServerOperation([18, 19, 20], "suspend");
-await ptero.batchServerOperation([18, 19, 20], "unsuspend");
-await ptero.batchServerOperation([18, 19, 20], "delete", { force: true });
-```
-
----
-
-## 6. Kontrol Client Server
-
-Interaksi pengguna akhir dengan server (Client API).
-
-```typescript
-const server = ptero.server("ca7b58fd");
-```
-
-### Sinyal Power Server
-```typescript
-await server.power("start");
-await server.power("stop");
-await server.power("restart");
-await server.power("kill");
-```
-
-### Kirim Perintah ke Konsol
-```typescript
-await server.command("say Halo Dunia!");
-```
-
-### Ambil Penggunaan Resource Live
-```typescript
-const res = await server.resources();
-console.log(res.attributes.state, res.attributes.resources.cpu_absolute);
-```
-
----
-
-## 7. Pengelola File Server (Client File Manager)
-
-Mengelola file dan direktori di dalam kontainer server game/bot.
-
-### Tulis & Baca File
-```typescript
-await server.files.write("/index.js", "console.log('Akadev Gateway');");
-
-const data = await server.files.read("/index.js");
-console.log(data);
-```
-
-### List File & Folder
-```typescript
-const list = await server.files.list("/");
-console.log(list.data);
-```
-
-### Buat Folder Baru
-```typescript
-await server.files.mkdir("/", "dist");
-```
-
-### Ganti Nama / Pindahkan File
-```typescript
-await server.files.rename("/", [
-  { from: "index.js", to: "main.js" }
-]);
-```
-
-### Kompres & Dekompres
-```typescript
-await server.files.compress("/", ["main.js", "dist"]);
-await server.files.decompress("/", "main.js.tar.gz");
-```
-
-### Hapus File / Folder
-```typescript
-await server.files.delete("/", ["main.js", "dist", "main.js.tar.gz"]);
-```
-
-### Operasi File JSON Praktis
-```typescript
-await server.files.json.write("/config.json", { port: 3000, debug: false });
-
-const config = await server.files.json.read("/config.json");
-console.log(config);
-```
-
-### Dapatkan URL Download File
-```typescript
-const result = await server.files.download("/index.js");
-console.log(result.attributes.url);
-```
-
-`files.read()` menolak respons HTML fallback dari panel agar halaman error atau login tidak terbaca sebagai isi file.
-
----
-
-## 8. Pengelola Port & Jaringan Server
-
-Mengelola alokasi alamat port pada server.
-
-### List Port Terpilih
-```typescript
-const net = await server.network.list();
-console.log(net.data);
-```
-
-### Alokasikan Port Tambahan
-```typescript
-await server.network.assign();
-```
-
-### Set Note / Catatan Port
-```typescript
-await server.network.setNote(21, "Port untuk bot whatsapp");
-```
-
-### Set Port Utama (Primary Allocation)
-```typescript
-await server.network.setPrimary(21);
-```
-
-### Hapus Alokasi Port Tambahan
-```typescript
-await server.network.delete(21);
-```
-
----
-
-## 9. Pengelola Database Server
-
-Mengelola database MySQL server.
-
-### List Database Server
-```typescript
-const dbs = await server.databases.list();
-console.log(dbs.data);
-```
-
-### Buat Database Baru
-```typescript
-const db = await server.databases.create("game_db");
-console.log(db.attributes.id, db.attributes.relationships.password);
-```
-
-### Ganti Password Database
-```typescript
-await server.databases.rotatePassword("db_id_xxx");
-```
-
-### Hapus Database
-```typescript
-await server.databases.delete("db_id_xxx");
-```
-
----
-
-## 10. Pengelola Backup Server
-
-Membuat dan memulihkan file pencadangan.
-
-### List Backup Server
-```typescript
-const backups = await server.backups.list();
-console.log(backups.data);
-```
-
-### Buat Backup Baru (Dengan Auto-Filter Opsional)
-```typescript
-const backup = await server.backups.create("backup_clean", "node_modules\nvendor\ntmp");
-console.log(backup.attributes.uuid);
-```
-
-### Detail Backup
-```typescript
-const backupDetail = await server.backups.get("backup_uuid_xxx");
-console.log(backupDetail.attributes.bytes);
-```
-
-### Dapatkan Link Download Backup
-```typescript
-const downloadLink = await server.backups.download("backup_uuid_xxx");
-console.log(downloadLink.attributes.url);
-```
-
-### Hapus Backup
-```typescript
-await server.backups.delete("backup_uuid_xxx");
-```
-
----
-
-## 11. WebSocket Real-time Stream
-
-Mendengarkan event status server, log konsol, dan penggunaan memori/CPU secara real-time. Pada runtime Node.js, SDK otomatis mengirim header `Origin` panel agar kompatibel dengan Wings yang memvalidasi origin.
-
-```typescript
-const ws = server.websocket.create();
-
-ws.onConsole((log) => {
-  console.log("Console:", log);
-});
-
-ws.onStats((stats) => {
-  console.log("RAM:", stats.memory_bytes, "CPU:", stats.cpu_absolute);
-});
-
-ws.onStatus((status) => {
-  console.log("Status:", status);
-});
-
-await ws.connect();
-```
-
----
-
-## 12. Fluent Schedule Builder
-
-Membuat jadwal tugas terjadwal (Cron Job) bawaan panel menggunakan struktur builder terantai.
-
-```typescript
-const schedule = server.createScheduleBuilder()
-  .setName("Pembersihan Mingguan")
-  .setCron("0 0 * * 0")
-  .setOnlyWhenOnline(true)
-  .addTask("command", "say Server membersihkan data cache...", 0, true)
-  .addTask("command", "npm run clean", 10, false)
-  .addTask("backup", "", 30, false);
-
-await schedule.save();
-```
-
----
-
-## 13. SMTP Email & Auto Backup Exporter (.zip)
-
-Mengirim email pemberitahuan ke pelanggan dan melakukan pencadangan zip otomatis secara eksternal. SMTP harus selalu diberikan secara eksplisit; SDK tidak membaca file `.env` panel dan memverifikasi sertifikat TLS secara default.
-
-### Kirim Email Tertarget ke Pengguna
-```typescript
-const smtp = {
+```ts
+const result = await ptero.exportAndEmailBackup(12, "owner@example.com", {
   host: "smtp.example.com",
   port: 587,
-  username: "no-reply@example.com",
-  password: process.env.SMTP_PASSWORD,
-  fromAddress: "no-reply@example.com",
-  fromName: "Akadev Panel"
-};
-
-await ptero.email.sendToUser(1, {
-  smtp,
-  subject: "Pengumuman Pembayaran Server",
-  html: "<h2>Halo</h2><p>Server Anda akan segera jatuh tempo dalam 3 hari.</p>",
-  attachments: [
-    {
-      filename: "invoice.pdf",
-      path: "/tmp/invoice.pdf"
-    }
-  ]
+  username: "user@example.com",
+  password: "password",
+  encryption: "starttls"
+}, {
+  keepPanelBackup: false,
+  attachmentLimitBytes: 25 * 1024 * 1024,
+  format: "zip"
 });
 ```
 
-### Kirim Email Broadcast Massal ke Seluruh Pengguna
-```typescript
-await ptero.email.broadcast({
-  smtp,
-  subject: "Pemeliharaan Node Server Indonesia",
-  html: "<h3>Pemberitahuan Sistem</h3><p>Node ID 1 akan dimatikan sementara untuk pemeliharaan RAM.</p>"
+Alternatif environment: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, `SMTP_ENCRYPTION`.
+
+## WebSocket
+
+```ts
+const socket = await ptero.server("6e04fb6f").websocket.connect({
+  reconnect: true,
+  maxReconnectAttempts: 10,
+  heartbeatInterval: 30000
 });
+
+socket.onConsole(line => console.log(line));
+socket.onStats(stats => console.log(stats.cpu_absolute));
+socket.onStatus(status => console.log(status));
+
+await socket.waitFor("auth success", 10000);
+await socket.close();
 ```
 
-### Auto Backup Exporter via Email (.zip)
-Secara otomatis membuat backup di panel dengan menyaring folder-folder berat (`node_modules`, `vendor`, `cache`, `tmp`, `temp`, `.git`), mengunduh file hasil backup, mengompres ulangnya ke ekstensi `.zip`, mengirimkannya langsung ke email pemilik server, dan menghapus sisa file backup di panel.
-```typescript
-await ptero.exportAndEmailBackup(18, undefined, smtp);
-```
+Token WebSocket di-refresh otomatis saat panel mengirim `token expiring`.
 
-### Backup Massal Pengguna
-```typescript
-await ptero.backupAndEmailUserServers(1, smtp);
-```
-
----
-
-## Keamanan & Penggunaan Terbuka
-- Simpan kredensial Anda di environment variables (`PTERO_DOMAIN`, `PTERO_PTLA`, `PTERO_PTLC`).
-- Gunakan `PteroGateway.fromEnv()` untuk pemanggilan otomatis dari konfigurasi environment variables.
-- Logging SDK tidak aktif secara default. Aktifkan `debug: true` hanya saat diagnosis.
-- Safe mode aktif secara default. Penghapusan user, server, dan allocation Application API memerlukan argumen konfirmasi `true`; gunakan `safeMode: false` hanya dalam otomasi yang sepenuhnya Anda kendalikan.
-- Berikan konfigurasi SMTP secara eksplisit dan jangan menonaktifkan verifikasi TLS kecuali Anda memahami risikonya.
-
-## CI dan Rilis
-
-Setiap push atau pull request ke `main` menjalankan quality gate pada Node.js 18, 20, dan 22. Workflow kemudian membangun tarball, memasangnya dalam proyek kosong, serta memverifikasi CLI dan wizard dari paket hasil build. Release check berjalan manual atau pada tag semver `vX.Y.Z` dan mengunggah kandidat paket sebagai artefak.
-
-Jalankan validasi yang setara secara lokal sebelum membuat rilis:
+## CLI
 
 ```bash
-npm ci
-npm run ci
+ptero-gateway help
+ptero-gateway doctor --json
+ptero-gateway nodes
+ptero-gateway eggs
+ptero-gateway plan --memory 2GB --disk 5GB --cpu 200
+ptero-gateway create-server --name "bot saya" --email owner@example.com --node 1 --egg 15 --preset standard --dry-run
+ptero-gateway server 6e04fb6f resources
+ptero-gateway server 6e04fb6f console --seconds 15
+ptero-gateway backup 12 --to owner@example.com --yes
 ```
+
+CLI aman secara default: operasi destruktif membutuhkan `--yes`, dan semua command mendukung `--json` untuk otomasi.
+
+## Konfigurasi
+
+Simpan profil agar tidak perlu mengulang key:
+
+```bash
+ptero-gateway config init --domain https://panel.example.com --ptla ptla_xxx --ptlc ptlc_xxx --profile prod
+ptero-gateway config use prod
+ptero-gateway config env
+```
+
+File berada di `~/.pterodactyl-gateway/config.json` dengan permission `600`. CLI juga membaca `.env` dan `.env.local` dari direktori kerja.
+
+Environment yang didukung:
+
+| Variabel | Fungsi |
+| --- | --- |
+| `PTERO_DOMAIN` | URL panel |
+| `PTERO_PTLA` | Application API key |
+| `PTERO_PTLC` | Client API key |
+| `PTERO_NODE_ID` | Node default |
+| `PTERO_NEST_ID` | Nest default |
+| `PTERO_EGG_ID` | Egg default |
+| `PTERO_SAFE_MODE` | `false` untuk mematikan guard penghapusan |
+| `SMTP_*` | Konfigurasi email |
+
+## Kompatibilitas panel
+
+Gateway mendeteksi kemampuan panel secara otomatis:
+
+- Panel standar dengan endpoint `/nests` dan `/nests/{id}/eggs`
+- Panel varian dengan endpoint `/eggs` dan `/eggs/{id}?include=variables`
+- Panel tanpa kedua endpoint akan menghasilkan error `UNSUPPORTED_PANEL_FEATURE` yang jelas
+
+Jika panel meminta environment variable tertentu saat membuat server, gateway melengkapi field yang kurang secara otomatis berdasarkan respons validasi panel.
+
+## Keamanan
+
+- API key tidak pernah ditulis ke log; nilai sensitif diredaksi otomatis
+- `safeMode` aktif secara default untuk operasi hapus
+- `prepublishOnly` menjalankan seluruh quality gate sebelum rilis
+- Source guard menolak komentar, watermark, dan kredensial di source code
+- Verifikasi TLS SMTP aktif secara default
+
+## Publish ke npm
+
+Otomatis melalui GitHub Actions:
+
+1. Tambahkan repository secret `NPM_TOKEN` dengan Automation token dari npm.
+2. Buat tag versi: `npm version patch && git push --follow-tags`.
+3. Workflow `.github/workflows/publish.yml` akan menjalankan `npm ci`, seluruh quality gate, lalu `npm publish --provenance --access public`.
+
+Manual dari VPS:
+
+```bash
+npm login
+npm run verify
+npm publish --access public
+```
+
+Panduan lengkap ada di [docs/PUBLISHING.md](docs/PUBLISHING.md).
 
 ## Troubleshooting
 
-| Kondisi | Tindakan |
-|---|---|
-| `UNEXPECTED_TEXT_RESPONSE` saat `files.read()` | Verifikasi path file, identifier server, dan Client API Key. Respons HTML panel sengaja ditolak agar tidak diperlakukan sebagai konten file. |
-| `RATE_LIMITED` | SDK melakukan retry untuk status yang dapat dipulihkan. Kurangi paralelisme bila panel tetap membatasi request. |
-| WebSocket gagal terkoneksi | Pastikan Wings dapat diakses dari runtime aplikasi. SDK Node.js mengirim Origin domain panel secara otomatis. |
-| `SMTP_CONFIG_REQUIRED` | Sertakan `smtp` lengkap saat memakai email atau backup-email. |
+| Gejala | Penyebab | Solusi |
+| --- | --- | --- |
+| `DOMAIN_REQUIRED` | Domain belum diisi | Set `PTERO_DOMAIN` atau jalankan `config init` |
+| `AUTH_FAILED` / `PERMISSION_DENIED` | Key salah atau kurang permission | Buat key baru di panel, cek permission |
+| `NO_FREE_ALLOCATION` | Node tanpa port kosong | Tambah allocation atau pilih node lain |
+| `CIRCUIT_OPEN` | Terlalu banyak kegagalan | Tunggu reset timeout, cek kesehatan panel |
+| `CONFLICT` saat operasi file | Server belum selesai instalasi | Gunakan `waitForInstall` |
+| `VALIDATION_ERROR` soal environment | Egg tidak mengekspos variable | Isi `environment` manual atau biarkan gateway melengkapi otomatis |
+| `UNSUPPORTED_PANEL_FEATURE` | Endpoint tidak tersedia | Gunakan `ptero-gateway doctor` untuk melihat kemampuan panel |
 
----
+Jalankan `ptero-gateway explain <KODE_ERROR>` untuk penjelasan detail dan langkah perbaikan.
 
-Dibuat dengan ❤️ oleh [akaanakbaik](https://github.com/akaanakbaik)
+## Lisensi
+
+MIT. Lihat [LICENSE](LICENSE).

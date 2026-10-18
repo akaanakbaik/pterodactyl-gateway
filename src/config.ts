@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { maskSecret, normalizeDomain } from "./utils.js";
 
 export type GatewayProfile = {
   domain: string;
@@ -30,17 +31,18 @@ export async function configCommand(args: string[]) {
     return;
   }
 
-  if (action === "init" || action === "set") {
-    const profile = getOption(args, "--profile") ?? getOption(args, "--name") ?? "default";
-    const domain = getOption(args, "--domain") ?? process.env.PTERO_DOMAIN;
-    const ptla = getOption(args, "--ptla") ?? process.env.PTERO_PTLA;
-    const ptlc = getOption(args, "--ptlc") ?? process.env.PTERO_PTLC;
-    if (!domain) throw new Error("--domain wajib diisi atau set PTERO_DOMAIN dulu.");
+  if (action === "init" || action === "set" || action === "add") {
+    const profileName = getOption(args, "--profile") ?? getOption(args, "--name") ?? "default";
+    const fromEnv = args.includes("--from-env");
+    const domain = getOption(args, "--domain") ?? (fromEnv ? process.env.PTERO_DOMAIN : undefined) ?? process.env.PTERO_DOMAIN;
+    const ptla = getOption(args, "--ptla") ?? (fromEnv ? process.env.PTERO_PTLA : undefined) ?? process.env.PTERO_PTLA;
+    const ptlc = getOption(args, "--ptlc") ?? (fromEnv ? process.env.PTERO_PTLC : undefined) ?? process.env.PTERO_PTLC;
+    if (!domain) throw new Error("--domain wajib diisi atau set PTERO_DOMAIN.");
     const config = readConfig();
-    config.profiles[profile] = compactProfile({ domain, ptla, ptlc });
-    config.active = profile;
+    config.profiles[profileName] = compactProfile({ domain, ptla, ptlc });
+    config.active = profileName;
     writeConfig(config);
-    printJsonOrText(jsonMode, safeConfig(config), `Profile '${profile}' tersimpan dan aktif.`);
+    printJsonOrText(jsonMode, safeConfig(config), `Profile '${profileName}' tersimpan dan aktif.`);
     return;
   }
 
@@ -60,7 +62,7 @@ export async function configCommand(args: string[]) {
   if (action === "show") {
     const config = readConfig();
     const profileName = args[1] && !args[1].startsWith("--") ? args[1] : config.active;
-    if (!profileName) throw new Error("Belum ada active profile. Jalankan: ptero-gateway config init --domain ...");
+    if (!profileName) throw new Error("Belum ada active profile. Jalankan config init.");
     const profile = config.profiles[profileName];
     if (!profile) throw new Error(`Profile tidak ditemukan: ${profileName}`);
     printJsonOrText(jsonMode, { name: profileName, ...safeProfile(profile) }, formatProfile(profileName, profile));
@@ -85,7 +87,7 @@ export async function configCommand(args: string[]) {
     const config = readConfig();
     if (!config.profiles[oldName]) throw new Error(`Profile tidak ditemukan: ${oldName}`);
     if (config.profiles[newName]) throw new Error(`Profile tujuan sudah ada: ${newName}`);
-    config.profiles[newName] = config.profiles[oldName];
+    config.profiles[newName] = config.profiles[oldName]!;
     delete config.profiles[oldName];
     if (config.active === oldName) config.active = newName;
     writeConfig(config);
@@ -96,7 +98,7 @@ export async function configCommand(args: string[]) {
   if (action === "delete" || action === "remove" || action === "rm") {
     const profileName = args[1];
     if (!profileName) throw new Error("Format: ptero-gateway config delete <profile> --yes");
-    if (!args.includes("--yes")) throw new Error("Aksi delete config butuh --yes.");
+    if (!args.includes("--yes")) throw new Error("Aksi delete config membutuhkan --yes.");
     const config = readConfig();
     if (!config.profiles[profileName]) throw new Error(`Profile tidak ditemukan: ${profileName}`);
     delete config.profiles[profileName];
@@ -106,13 +108,14 @@ export async function configCommand(args: string[]) {
     return;
   }
 
-  if (action === "env") {
+  if (action === "env" || action === "export") {
     const config = readConfig();
     const profileName = args[1] && !args[1].startsWith("--") ? args[1] : config.active;
     if (!profileName) throw new Error("Belum ada active profile.");
     const profile = config.profiles[profileName];
     if (!profile) throw new Error(`Profile tidak ditemukan: ${profileName}`);
-    console.log(toEnv(profile));
+    if (jsonMode) console.log(JSON.stringify({ profile: profileName, env: profileToEnv(profile) }, null, 2));
+    else console.log(toEnv(profile));
     return;
   }
 
@@ -125,6 +128,7 @@ export async function configCommand(args: string[]) {
       path: CONFIG_FILE,
       active: profileName ?? null,
       profileExists: Boolean(profile),
+      profiles: Object.keys(config.profiles).length,
       hasDomain: Boolean(profile?.domain),
       hasPtla: Boolean(profile?.ptla),
       hasPtlc: Boolean(profile?.ptlc)
@@ -133,10 +137,11 @@ export async function configCommand(args: string[]) {
       `Config: ${result.ok ? "OK" : "PERLU DILENGKAPI"}`,
       `Path: ${result.path}`,
       `Active: ${result.active ?? "-"}`,
-      `${result.profileExists ? "✓" : "✗"} profile tersedia`,
-      `${result.hasDomain ? "✓" : "✗"} domain`,
-      `${result.hasPtla ? "✓" : "-"} PTLA`,
-      `${result.hasPtlc ? "✓" : "-"} PTLC`
+      `Profiles: ${result.profiles}`,
+      `${result.profileExists ? "PASS" : "FAIL"} profile tersedia`,
+      `${result.hasDomain ? "PASS" : "FAIL"} domain`,
+      `${result.hasPtla ? "PASS" : "-"} PTLA`,
+      `${result.hasPtlc ? "PASS" : "-"} PTLC`
     ].join("\n");
     printJsonOrText(jsonMode, result, pretty);
     return;
@@ -147,21 +152,29 @@ export async function configCommand(args: string[]) {
 
 export function applyConfigProfile(profileName = process.env.PTERO_PROFILE) {
   if (!existsSync(CONFIG_FILE)) return false;
-  const config = readConfig();
-  const active = profileName || config.active;
-  if (!active) return false;
-  const profile = config.profiles[active];
-  if (!profile) return false;
-  process.env.PTERO_DOMAIN ||= profile.domain;
-  if (profile.ptla) process.env.PTERO_PTLA ||= profile.ptla;
-  if (profile.ptlc) process.env.PTERO_PTLC ||= profile.ptlc;
-  return true;
+  try {
+    const config = readConfig();
+    const active = profileName || config.active;
+    if (!active) return false;
+    const profile = config.profiles[active];
+    if (!profile) return false;
+    process.env.PTERO_DOMAIN ||= profile.domain;
+    if (profile.ptla) process.env.PTERO_PTLA ||= profile.ptla;
+    if (profile.ptlc) process.env.PTERO_PTLC ||= profile.ptlc;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function readConfig(): GatewayConfig {
   if (!existsSync(CONFIG_FILE)) return { profiles: {} };
-  const raw = JSON.parse(readFileSync(CONFIG_FILE, "utf8")) as Partial<GatewayConfig>;
-  return { active: raw.active, profiles: raw.profiles ?? {} };
+  try {
+    const raw = JSON.parse(readFileSync(CONFIG_FILE, "utf8")) as Partial<GatewayConfig>;
+    return { active: raw.active, profiles: raw.profiles ?? {} };
+  } catch {
+    return { profiles: {} };
+  }
 }
 
 function writeConfig(config: GatewayConfig) {
@@ -169,21 +182,25 @@ function writeConfig(config: GatewayConfig) {
   writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   try {
     chmodSync(CONFIG_FILE, 0o600);
-  } catch {}
+  } catch {
+    undefined;
+  }
 }
 
 function compactProfile(profile: GatewayProfile): GatewayProfile {
   return {
-    domain: profile.domain.replace(/\/$/, ""),
-    ...(profile.ptla ? { ptla: profile.ptla } : {}),
-    ...(profile.ptlc ? { ptlc: profile.ptlc } : {})
+    domain: normalizeDomain(profile.domain),
+    ...(profile.ptla ? { ptla: profile.ptla.trim() } : {}),
+    ...(profile.ptlc ? { ptlc: profile.ptlc.trim() } : {})
   };
 }
 
 function getOption(args: string[], name: string) {
   const index = args.indexOf(name);
   if (index < 0) return undefined;
-  return args[index + 1];
+  const value = args[index + 1];
+  if (!value || value.startsWith("--")) return undefined;
+  return value;
 }
 
 function safeConfig(config: GatewayConfig) {
@@ -210,17 +227,18 @@ function formatProfile(name: string, profile: GatewayProfile) {
   ].join("\n");
 }
 
-function toEnv(profile: GatewayProfile) {
-  return [
-    `export PTERO_DOMAIN=${JSON.stringify(profile.domain)}`,
-    profile.ptla ? `export PTERO_PTLA=${JSON.stringify(profile.ptla)}` : "",
-    profile.ptlc ? `export PTERO_PTLC=${JSON.stringify(profile.ptlc)}` : ""
-  ].filter(Boolean).join("\n");
+function profileToEnv(profile: GatewayProfile) {
+  return {
+    PTERO_DOMAIN: profile.domain,
+    ...(profile.ptla ? { PTERO_PTLA: profile.ptla } : {}),
+    ...(profile.ptlc ? { PTERO_PTLC: profile.ptlc } : {})
+  };
 }
 
-function maskSecret(value: string) {
-  if (value.length <= 10) return "********";
-  return `${value.slice(0, 5)}********${value.slice(-4)}`;
+function toEnv(profile: GatewayProfile) {
+  return Object.entries(profileToEnv(profile))
+    .map(([key, value]) => `export ${key}=${JSON.stringify(value)}`)
+    .join("\n");
 }
 
 function printJsonOrText(jsonMode: boolean, raw: unknown, text: string) {
@@ -238,12 +256,12 @@ function table(rows: Array<Record<string, string>>, columns: string[]) {
 }
 
 function printConfigHelp() {
-  console.log(`Akadev Pterodactyl Gateway Config
+  console.log(`Pterodactyl Gateway Config
 
 Perintah:
   ptero-gateway config path
   ptero-gateway config init --domain https://panel.example.com --ptla ptla_xxx --ptlc ptlc_xxx
-  ptero-gateway config init --profile prod --domain https://panel.example.com --ptla ptla_xxx --ptlc ptlc_xxx
+  ptero-gateway config init --profile prod --from-env
   ptero-gateway config list
   ptero-gateway config show [profile]
   ptero-gateway config use <profile>
@@ -254,5 +272,6 @@ Perintah:
 
 Catatan:
   File config disimpan di ~/.pterodactyl-gateway/config.json dengan permission 600.
-  CLI otomatis memakai active profile jika env PTERO_DOMAIN/PTERO_PTLA/PTERO_PTLC belum di-set.`);
+  CLI memakai environment lebih dulu, lalu active profile.
+  Jangan commit API key ke repository.`);
 }

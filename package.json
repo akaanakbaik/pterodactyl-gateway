@@ -1,9 +1,10 @@
 {
   "name": "@akaanakbaik/pterodactyl-gateway",
-  "version": "1.4.2",
-  "description": "Full-featured TypeScript SDK untuk Pterodactyl Panel. Fokus pada kemudahan integrasi untuk developer membangun dashboard, bot, dan sistem otomasi panel yang kompleks.",
+  "version": "1.5.0",
+  "description": "Gateway Pterodactyl profesional untuk JavaScript dan TypeScript: Application API, Client API, perencanaan kapasitas, WebSocket, backup, email, dan CLI.",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
     "ptero-gateway": "dist/cli-entry.js",
@@ -12,35 +13,45 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
     "README.md",
     "CHANGELOG.md",
     "BLUEPRINT.md",
-    "add-promt.md",
+    "ARCHITECTURE_NEW.md",
     "LICENSE"
   ],
   "sideEffects": false,
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "npm run clean && tsc -p tsconfig.json && npm run chmod:bin",
-    "chmod:bin": "node -e \"const fs=require('fs'); for (const f of ['dist/cli.js','dist/cli-entry.js','dist/wizard-cli.js']) if (fs.existsSync(f)) fs.chmodSync(f, 0o755)\"",
+    "build": "npm run clean && tsup src/index.ts src/cli-entry.ts src/wizard-cli.ts --format esm,cjs --sourcemap --target node18 --out-dir dist --external ws --external nodemailer && tsc -p tsconfig.types.json && node scripts/emit-cjs-types.mjs && npm run chmod:bin",
+    "chmod:bin": "node -e \"const fs=require('fs'); for (const f of ['dist/cli-entry.js','dist/wizard-cli.js']) if (fs.existsSync(f)) fs.chmodSync(f, 0o755)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && npm run test:runtime",
-    "test:runtime": "node --test test/*.test.js",
+    "test:runtime": "node --test test/*.test.js test/*.test.cjs",
+    "test:types": "node scripts/type-consumer.js",
     "test:source": "node scripts/source-guard.js",
     "test:cli": "npm run build && node dist/cli-entry.js help && node dist/cli-entry.js version --json && node dist/cli-entry.js self-check --json && node dist/cli-entry.js release-check --json",
     "test:pack": "npm run build && npm pack --dry-run",
     "test:release": "node scripts/release-guard.js",
+    "test:live": "node scripts/live-test.mjs",
     "security:audit": "npm audit --audit-level=high",
     "ci": "npm run verify && npm run security:audit",
     "cli": "node dist/cli-entry.js",
     "wizard": "node dist/wizard-cli.js",
-    "verify": "npm run typecheck && npm run test:source && npm test && npm run test:cli && npm run test:pack && npm run test:release",
+    "verify": "npm run typecheck && npm run test:source && npm test && npm run test:types && npm run test:cli && npm run test:pack && npm run test:release",
+    "publish:dry": "npm run verify && npm publish --dry-run --access public",
     "prepublishOnly": "npm run verify"
   },
   "keywords": [
@@ -67,6 +78,8 @@
     "discordjs",
     "dashboard",
     "typescript",
+    "esm",
+    "commonjs",
     "nodejs",
     "sdk",
     "cli"
@@ -88,13 +101,14 @@
     "node": ">=18"
   },
   "devDependencies": {
-    "@types/node": "^20.11.30",
-    "@types/nodemailer": "^8.0.1",
-    "@types/ws": "^8.18.1",
-    "typescript": "^5.4.5"
+    "@types/node": "^26.6.5",
+    "@types/nodemailer": "^8.0.2",
+    "@types/ws": "^8.18.2",
+    "tsup": "^9.0.0",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
-    "nodemailer": "^9.1.1",
-    "ws": "^8.21.0"
+    "nodemailer": "^10.1.2",
+    "ws": "^8.22.0"
   }
 }

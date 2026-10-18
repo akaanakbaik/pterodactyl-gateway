@@ -22,7 +22,7 @@ jobs:
   release-check:
     name: Release package validation
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,7 +30,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22.x
+          node-version: 24.x
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -58,14 +58,17 @@ jobs:
           npm install "$PACKAGE_TGZ" --ignore-scripts
           NPM_ROOT="$(npm root)"
           PACKAGE_DIR="$NPM_ROOT/@akaanakbaik/pterodactyl-gateway"
-          test -f "$PACKAGE_DIR/package.json"
-          test -f "$PACKAGE_DIR/dist/cli-entry.js"
-          test -f "$PACKAGE_DIR/dist/wizard-cli.js"
+          test -f "$PACKAGE_DIR/dist/index.js"
+          test -f "$PACKAGE_DIR/dist/index.cjs"
+          test -f "$PACKAGE_DIR/dist/index.d.ts"
+          test -f "$PACKAGE_DIR/dist/index.d.cts"
           node "$PACKAGE_DIR/dist/cli-entry.js" version --json
           node "$PACKAGE_DIR/dist/cli-entry.js" self-check --json
           node "$PACKAGE_DIR/dist/cli-entry.js" release-check --json
           node "$PACKAGE_DIR/dist/cli-entry.js" templates list
           node "$PACKAGE_DIR/dist/wizard-cli.js" help
+          node -e "require('@akaanakbaik/pterodactyl-gateway');"
+          node --input-type=module -e "import '@akaanakbaik/pterodactyl-gateway';"
 
       - name: Upload release candidate artifact
         uses: actions/upload-artifact@v4

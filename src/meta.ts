@@ -1,77 +1,91 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
-const PACKAGE_JSON = join(ROOT_DIR, "package.json");
-const PACKAGE_LOCK = join(ROOT_DIR, "package-lock.json");
+import { dirname, join, parse, resolve } from "node:path";
+import { PACKAGE_NAME, VERSION } from "./version.js";
 
 export function versionCommand(jsonMode: boolean) {
-  const pkg = readJson(PACKAGE_JSON);
   const result = {
-    name: pkg.name,
-    version: pkg.version,
+    name: PACKAGE_NAME,
+    version: VERSION,
     node: process.version,
-    bin: pkg.bin ?? {},
-    installRoot: ROOT_DIR
+    bin: { "ptero-gateway": "dist/cli-entry.js", ptg: "dist/cli-entry.js", "ptero-wizard": "dist/wizard-cli.js" },
+    installRoot: findPackageRoot()
   };
   if (jsonMode) console.log(JSON.stringify(result, null, 2));
   else console.log(`${result.name}@${result.version}`);
 }
 
 export function selfCheckCommand(jsonMode: boolean) {
-  const pkg = readJson(PACKAGE_JSON);
-  const lock = existsSync(PACKAGE_LOCK) ? readJson(PACKAGE_LOCK) : undefined;
+  const root = findPackageRoot();
+  const packagePath = join(root, "package.json");
+  const lockPath = join(root, "package-lock.json");
+  const pkg = existsSync(packagePath) ? readJson(packagePath) : {};
+  const lock = existsSync(lockPath) ? readJson(lockPath) : undefined;
   const checks = [
-    check("package.json", existsSync(PACKAGE_JSON), PACKAGE_JSON),
-    lock ? check("package-lock.json", true, PACKAGE_LOCK) : check("package-lock.json", true, "not included in installed npm package; source-only check skipped"),
-    check("name", pkg.name === "@akaanakbaik/pterodactyl-gateway", String(pkg.name)),
-    check("version", Boolean(pkg.version), String(pkg.version ?? "")),
-    check("lock version", !lock || lock.version === pkg.version, lock ? String(lock.version) : "skipped"),
-    check("root lock version", !lock || lock.packages?.[""]?.version === pkg.version, lock ? String(lock.packages?.[""]?.version) : "skipped"),
-    check("bin ptero-gateway", Boolean(pkg.bin?.["ptero-gateway"]), String(pkg.bin?.["ptero-gateway"] ?? "")),
-    check("bin ptg", Boolean(pkg.bin?.ptg), String(pkg.bin?.ptg ?? "")),
-    check("bin ptero-wizard", Boolean(pkg.bin?.["ptero-wizard"]), String(pkg.bin?.["ptero-wizard"] ?? "")),
-    check("prepublishOnly", String(pkg.scripts?.prepublishOnly ?? "").includes("verify"), String(pkg.scripts?.prepublishOnly ?? "")),
-    check("node >=18", nodeMajor() >= 18, process.version)
+    check("package.json", existsSync(packagePath), packagePath),
+    check("package version", pkg.version === VERSION, `${pkg.version ?? "missing"} / ${VERSION}`),
+    check("package name", pkg.name === PACKAGE_NAME, String(pkg.name ?? "missing")),
+    check("lock version", !lock || lock.version === VERSION, lock ? String(lock.version) : "skipped outside source checkout"),
+    check("bin ptero-gateway", Boolean(pkg.bin?.["ptero-gateway"]), String(pkg.bin?.["ptero-gateway"] ?? "missing")),
+    check("bin ptg", Boolean(pkg.bin?.ptg), String(pkg.bin?.ptg ?? "missing")),
+    check("bin ptero-wizard", Boolean(pkg.bin?.["ptero-wizard"]), String(pkg.bin?.["ptero-wizard"] ?? "missing")),
+    check("dual exports", Boolean(pkg.exports?.["."]?.import && pkg.exports?.["."]?.require), JSON.stringify(pkg.exports?.["."] ?? {})),
+    check("node >=18", nodeMajor() >= 18, process.version),
+    check("prepublishOnly", String(pkg.scripts?.prepublishOnly ?? "").includes("verify"), String(pkg.scripts?.prepublishOnly ?? "missing"))
   ];
-  const result = { ok: checks.every(item => item.ok), mode: lock ? "source" : "installed", checks };
+  const result = { ok: checks.every(item => item.ok), mode: lock ? "source" : "installed", version: VERSION, checks };
   if (jsonMode) console.log(JSON.stringify(result, null, 2));
   else {
     console.log(`Self-check: ${result.ok ? "OK" : "FAILED"}`);
     console.log(`Mode: ${result.mode}`);
-    for (const item of checks) console.log(`${item.ok ? "✓" : "✗"} ${item.name}: ${item.detail}`);
-  }
-}
-
-export function releaseCheckCommand(jsonMode: boolean) {
-  const pkg = readJson(PACKAGE_JSON);
-  const lock = existsSync(PACKAGE_LOCK) ? readJson(PACKAGE_LOCK) : undefined;
-  const sourceMode = Boolean(lock);
-  const checks = [
-    check("version set", Boolean(pkg.version), String(pkg.version ?? "")),
-    sourceMode ? check("lock version matches", lock.version === pkg.version, `${lock.version} / ${pkg.version}`) : check("lock version matches", true, "skipped outside source checkout"),
-    sourceMode ? check("lock root version matches", lock.packages?.[""]?.version === pkg.version, `${lock.packages?.[""]?.version} / ${pkg.version}`) : check("lock root version matches", true, "skipped outside source checkout"),
-    check("dist included", Array.isArray(pkg.files) && pkg.files.includes("dist"), JSON.stringify(pkg.files ?? [])),
-    check("README included", Array.isArray(pkg.files) && pkg.files.includes("README.md"), JSON.stringify(pkg.files ?? [])),
-    check("CHANGELOG included", Array.isArray(pkg.files) && pkg.files.includes("CHANGELOG.md"), JSON.stringify(pkg.files ?? [])),
-    check("license MIT", pkg.license === "MIT", String(pkg.license ?? "")),
-    check("prepublishOnly verify", String(pkg.scripts?.prepublishOnly ?? "").includes("verify"), String(pkg.scripts?.prepublishOnly ?? "")),
-    check("test:release exists", Boolean(pkg.scripts?.["test:release"]), String(pkg.scripts?.["test:release"] ?? "")),
-    check("no node admin help string", true, "checked by CLI grep in manual smoke test")
-  ];
-  const result = { ok: checks.every(item => item.ok), mode: sourceMode ? "source" : "installed", package: `${pkg.name}@${pkg.version}`, checks };
-  if (jsonMode) console.log(JSON.stringify(result, null, 2));
-  else {
-    console.log(`Release-check: ${result.ok ? "OK" : "FAILED"}`);
-    console.log(`Mode: ${result.mode}`);
-    console.log(`Package: ${result.package}`);
-    for (const item of checks) console.log(`${item.ok ? "✓" : "✗"} ${item.name}: ${item.detail}`);
+    for (const item of checks) console.log(`${item.ok ? "PASS" : "FAIL"} ${item.name}: ${item.detail}`);
   }
   if (!result.ok) process.exitCode = 1;
 }
 
-function readJson(path: string) {
+export function releaseCheckCommand(jsonMode: boolean) {
+  const root = findPackageRoot();
+  const packagePath = join(root, "package.json");
+  const pkg = existsSync(packagePath) ? readJson(packagePath) : {};
+  const checks = [
+    check("version set", pkg.version === VERSION, `${pkg.version ?? "missing"} / ${VERSION}`),
+    check("dist included", Array.isArray(pkg.files) && pkg.files.includes("dist"), JSON.stringify(pkg.files ?? [])),
+    check("README included", Array.isArray(pkg.files) && pkg.files.includes("README.md"), JSON.stringify(pkg.files ?? [])),
+    check("CHANGELOG included", Array.isArray(pkg.files) && pkg.files.includes("CHANGELOG.md"), JSON.stringify(pkg.files ?? [])),
+    check("license MIT", pkg.license === "MIT", String(pkg.license ?? "missing")),
+    check("dual exports", Boolean(pkg.exports?.["."]?.import && pkg.exports?.["."]?.require), JSON.stringify(pkg.exports?.["."] ?? {})),
+    check("publishConfig public", pkg.publishConfig?.access === "public", String(pkg.publishConfig?.access ?? "missing")),
+    check("prepublishOnly verify", String(pkg.scripts?.prepublishOnly ?? "").includes("verify"), String(pkg.scripts?.prepublishOnly ?? "missing")),
+    check("test:release exists", Boolean(pkg.scripts?.["test:release"]), String(pkg.scripts?.["test:release"] ?? "missing"))
+  ];
+  const result = { ok: checks.every(item => item.ok), package: `${PACKAGE_NAME}@${VERSION}`, checks };
+  if (jsonMode) console.log(JSON.stringify(result, null, 2));
+  else {
+    console.log(`Release-check: ${result.ok ? "OK" : "FAILED"}`);
+    console.log(`Package: ${result.package}`);
+    for (const item of checks) console.log(`${item.ok ? "PASS" : "FAIL"} ${item.name}: ${item.detail}`);
+  }
+  if (!result.ok) process.exitCode = 1;
+}
+
+export function findPackageRoot(): string {
+  const starts = [dirname(resolve(process.argv[1] ?? process.cwd())), resolve(process.cwd())];
+  for (const start of starts) {
+    let current = start;
+    const root = parse(current).root;
+    while (true) {
+      const candidate = join(current, "package.json");
+      if (existsSync(candidate)) {
+        const pkg = readJson(candidate);
+        if (pkg.name === PACKAGE_NAME) return current;
+      }
+      if (current === root) break;
+      current = dirname(current);
+    }
+  }
+  return resolve(process.cwd());
+}
+
+function readJson(path: string): Record<string, any> {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 

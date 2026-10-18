@@ -1,6 +1,10 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { applyConfigProfile } from "./config.js";
+import { loadEnvFiles } from "./env.js";
 import { createPtero } from "./index.js";
+import { getDataAttributes, maskSecret } from "./utils.js";
+import type { PteroGateway } from "./gateway.js";
 import type { CreateSmartServerInput, ServerSpecsInput } from "./types.js";
 
 const PRESETS = ["mini", "basic", "standard", "premium", "unlimited"];
@@ -11,30 +15,30 @@ type WizardFlags = {
   json: boolean;
 };
 
-type WizardCreateServerPayload = Omit<CreateSmartServerInput, "specs"> & {
-  preset?: string;
-  specs?: Partial<ServerSpecsInput>;
-};
-
 export async function runWizard(args: string[]) {
   const action = args[0] ?? "help";
   const flags = parseFlags(args);
+  loadEnvFiles();
+  applyConfigProfile();
 
   if (["help", "--help", "-h"].includes(action)) {
     printWizardHelp();
     return;
   }
-
   if (action === "create-user") {
     await wizardCreateUser(flags);
     return;
   }
-
   if (action === "create-server") {
     await wizardCreateServer(flags);
     return;
   }
-
+  if (action === "doctor") {
+    const gateway = createPtero.fromEnv();
+    const report = await gateway.doctor();
+    printResult(report, flags, report.ok ? "Panel sehat." : "Panel perlu perbaikan.");
+    return;
+  }
   throw new Error(`Wizard tidak dikenal: ${action}`);
 }
 
@@ -45,26 +49,17 @@ async function wizardCreateUser(flags: WizardFlags) {
     const username = await required(rl, "Username");
     const email = await required(rl, "Email");
     const password = await question(rl, "Password (kosong = auto)", "auto");
-    const administratorRaw = await question(rl, "Administrator? yes/no", "no");
-    const administrator = parseYesNo(administratorRaw);
+    const administrator = parseYesNo(await question(rl, "Administrator? yes/no", "no"));
     const payload = { username, email, password, administrator };
+    const gateway = createPtero.fromEnv();
 
     if (flags.dryRun) {
-      printResult({ dryRun: true, payload }, flags);
+      printResult(await gateway.smart.users.create(payload, { dryRun: true }), flags, "Dry run create user.");
       return;
     }
-
-    if (!flags.yes) {
-      const ok = parseYesNo(await question(rl, "Buat user sekarang? yes/no", "no"));
-      if (!ok) {
-        console.log("Dibatalkan.");
-        return;
-      }
-    }
-
-    const ptero = createPtero.fromEnv();
-    const result = await ptero.smart.users.create(payload);
-    printResult(result, flags, "User berhasil dibuat.");
+    if (!(await confirm(rl, flags, "Buat user sekarang?"))) return;
+    const result = await gateway.smart.users.create(payload);
+    printResult(result, flags, `User dibuat: ${"id" in result ? result.id : "-"}`);
   } finally {
     rl.close();
   }
@@ -73,88 +68,87 @@ async function wizardCreateUser(flags: WizardFlags) {
 async function wizardCreateServer(flags: WizardFlags) {
   const rl = createInterface({ input, output });
   try {
+    const gateway = createPtero.fromEnv();
     console.log("Wizard Create Server");
-    console.log("Catatan: node/nest/egg ID tetap diisi manual oleh admin. Jalankan `ptero-gateway ids` jika perlu melihat ID.");
+    const connect = await gateway.connect();
+    if (!connect.ok) throw new Error("Koneksi panel gagal. Jalankan ptero-gateway doctor.");
 
+    const nodes = await gateway.application.nodes.all();
+    if (nodes.length === 0) throw new Error("Tidak ada node pada panel.");
+    printRows(
+      nodes.map(node => {
+        const attributes = getDataAttributes(node);
+        return { id: attributes.id, name: attributes.name, memory: attributes.memory, disk: attributes.disk };
+      })
+    );
+
+    const nodeId = Number(await question(rl, "Node ID", String(getDataAttributes(nodes[0]).id ?? 1)));
+    const eggs = await gateway.listEggs();
+    printRows(
+      eggs.slice(0, 25).map(egg => {
+        const attributes = getDataAttributes(egg);
+        return { id: attributes.id, name: attributes.name, image: attributes.docker_image };
+      })
+    );
+    const eggId = Number(await question(rl, "Egg ID", "15"));
+    const nestId = Number(await question(rl, "Nest ID", "5"));
     const name = await required(rl, "Nama server");
     const email = await required(rl, "Email owner");
-    const username = await question(rl, "Username owner jika ingin auto-create user (kosong = pakai user existing dari email)", "");
-    const password = username ? await question(rl, "Password user (kosong = auto)", "auto") : undefined;
-    const description = await question(rl, "Description", "Created by Akadev Pterodactyl Gateway Wizard");
-    const nodeId = parseRequiredNumber(await required(rl, "Node ID"), "Node ID");
-    const nestId = parseRequiredNumber(await required(rl, "Nest ID"), "Nest ID");
-    const eggId = parseRequiredNumber(await required(rl, "Egg ID"), "Egg ID");
+    const username = await question(rl, "Username owner (kosong = dari email)", "");
     const preset = await choosePreset(rl);
     const memory = await question(rl, "Memory override (kosong = preset)", "");
     const disk = await question(rl, "Disk override (kosong = preset)", "");
     const cpu = await question(rl, "CPU override (kosong = preset)", "");
-    const databases = await optionalNumber(rl, "Database limit override (kosong = preset)");
-    const allocations = await optionalNumber(rl, "Allocation limit override (kosong = preset)");
-    const backups = await optionalNumber(rl, "Backup limit override (kosong = preset)");
-
-    const inputPayload: WizardCreateServerPayload = {
+    const useExistingUser = username ? false : await confirm(rl, flags, "Gunakan user existing / auto create tanpa password custom?", true);
+    const payload: CreateSmartServerInput = {
       name,
       email,
       username: username || undefined,
-      password,
-      autoCreateUser: Boolean(username),
-      description,
+      password: "auto",
+      autoCreateUser: !useExistingUser || Boolean(username),
+      description: `Managed by Pterodactyl Gateway (${new Date().toISOString().slice(0, 10)})`,
       nodeId,
       nestId,
       eggId,
-      dockerImage: "auto",
-      startup: "auto",
       preset,
       specs: {
+        ...presetSpecs(preset),
         ...(memory ? { memory } : {}),
         ...(disk ? { disk } : {}),
-        ...(cpu ? { cpu } : {}),
-        ...(databases !== undefined ? { databases } : {}),
-        ...(allocations !== undefined ? { allocations } : {}),
-        ...(backups !== undefined ? { backups } : {})
-      }
+        ...(cpu ? { cpu } : {})
+      },
+      startup: "auto",
+      dockerImage: "auto",
+      environment: "auto",
+      startOnCompletion: false
     };
 
     console.log("\nPreview input:");
-    console.log(JSON.stringify(maskPayload(inputPayload), null, 2));
-
-    const ptero = createPtero.fromEnv();
-    const normalizedInput = normalizeCreateServerInput(inputPayload);
+    console.log(JSON.stringify(maskPayload(payload), null, 2));
 
     if (flags.dryRun) {
-      const result = await ptero.smart.servers.create(normalizedInput, { dryRun: true });
-      printResult(result, flags, "Create server dry-run OK.");
+      printResult(await gateway.smart.servers.create(payload, { dryRun: true }), flags, "Dry run create server.");
       return;
     }
-
-    if (!flags.yes) {
-      const ok = parseYesNo(await question(rl, "Buat server sekarang? yes/no", "no"));
-      if (!ok) {
-        console.log("Dibatalkan.");
-        return;
-      }
-    }
-
-    const result = await ptero.smart.servers.create(normalizedInput);
-    printResult(result, flags, "Server berhasil dibuat.");
+    if (!(await confirm(rl, flags, "Buat server sekarang?"))) return;
+    const result = await gateway.smart.servers.create(payload, {
+      onProgress: flags.json ? undefined : step => process.stderr.write(`[${step.percent}%] ${step.message}\n`)
+    });
+    printResult(result, flags, `Server dibuat: ${"identifier" in result ? result.identifier ?? "-" : "-"}`);
   } finally {
     rl.close();
   }
 }
 
-function normalizeCreateServerInput(inputPayload: WizardCreateServerPayload): CreateSmartServerInput {
-  const preset = inputPayload.preset ?? "basic";
-  const fallback = presetToSpecs(preset);
-  const specs: ServerSpecsInput = { ...fallback, ...inputPayload.specs };
-  return { ...inputPayload, specs };
-}
-
-function presetToSpecs(preset: string): ServerSpecsInput {
-  if (preset === "mini") return { memory: "512MB", disk: "1GB", cpu: "50%", databases: 0, allocations: 1, backups: 0, swap: 0, io: 500 };
-  if (preset === "standard") return { memory: "2GB", disk: "5GB", cpu: "200%", databases: 1, allocations: 1, backups: 1, swap: 0, io: 500 };
-  if (preset === "premium") return { memory: "4GB", disk: "10GB", cpu: "300%", databases: 2, allocations: 2, backups: 2, swap: 0, io: 500 };
-  if (preset === "unlimited") return { memory: "0", disk: "0", cpu: "0", databases: 5, allocations: 3, backups: 3, swap: 0, io: 500 };
-  return { memory: "1GB", disk: "2GB", cpu: "100%", databases: 0, allocations: 1, backups: 0, swap: 0, io: 500 };
+function presetSpecs(preset: string): ServerSpecsInput {
+  const table: Record<string, ServerSpecsInput> = {
+    mini: { memory: "512MB", disk: "1GB", cpu: "50%", databases: 0, allocations: 1, backups: 0, swap: 0, io: 500 },
+    basic: { memory: "1GB", disk: "2GB", cpu: "100%", databases: 0, allocations: 1, backups: 0, swap: 0, io: 500 },
+    standard: { memory: "2GB", disk: "5GB", cpu: "200%", databases: 1, allocations: 1, backups: 1, swap: 0, io: 500 },
+    premium: { memory: "4GB", disk: "10GB", cpu: "300%", databases: 2, allocations: 2, backups: 2, swap: 0, io: 500 },
+    unlimited: { memory: 0, disk: 0, cpu: 0, databases: 5, allocations: 3, backups: 3, swap: 0, io: 500 }
+  };
+  return table[preset] ?? table.basic!;
 }
 
 async function choosePreset(rl: ReturnType<typeof createInterface>) {
@@ -163,10 +157,10 @@ async function choosePreset(rl: ReturnType<typeof createInterface>) {
   return answer;
 }
 
-async function optionalNumber(rl: ReturnType<typeof createInterface>, label: string) {
-  const value = await question(rl, label, "");
-  if (!value) return undefined;
-  return parseRequiredNumber(value, label);
+async function confirm(rl: ReturnType<typeof createInterface>, flags: WizardFlags, message: string, defaultValue = false) {
+  if (flags.yes) return true;
+  const answer = (await question(rl, `${message} yes/no`, defaultValue ? "yes" : "no")).toLowerCase();
+  return parseYesNo(answer);
 }
 
 async function required(rl: ReturnType<typeof createInterface>, label: string) {
@@ -181,16 +175,10 @@ async function question(rl: ReturnType<typeof createInterface>, label: string, f
   return value || fallback;
 }
 
-function parseRequiredNumber(value: string, label: string) {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${label} harus angka.`);
-  return parsed;
-}
-
 function parseYesNo(value: string) {
   const normalized = value.trim().toLowerCase();
-  if (["yes", "y", "true", "1", "iya", "ya"].includes(normalized)) return true;
-  if (["no", "n", "false", "0", "tidak", "nggak", "ga", "gak"].includes(normalized)) return false;
+  if (["yes", "y", "true", "1", "ya", "iya"].includes(normalized)) return true;
+  if (["no", "n", "false", "0", "tidak", "nggak", "gak", ""].includes(normalized)) return false;
   throw new Error("Jawaban harus yes/no.");
 }
 
@@ -207,15 +195,15 @@ function maskPayload(value: unknown): unknown {
   if (typeof value !== "object" || value === null) return value;
   const output: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    output[key] = /(password|token|key|secret|auth)/i.test(key) && typeof item === "string" ? maskSecret(item) : maskPayload(item);
+    output[key] = /(password|token|key|secret|auth)/i.test(key) && typeof item === "string" && item !== "auto" ? maskSecret(item) : maskPayload(item);
   }
   return output;
 }
 
-function maskSecret(value: string) {
-  if (!value || value === "auto") return value;
-  if (value.length <= 4) return "****";
-  return `${value.slice(0, 2)}****${value.slice(-2)}`;
+function printRows(rows: Array<Record<string, unknown>>) {
+  for (const row of rows) {
+    console.log(Object.entries(row).map(([key, value]) => `${key}=${String(value ?? "-")}`).join("  "));
+  }
 }
 
 function printResult(result: unknown, flags: WizardFlags, message?: string) {
@@ -228,17 +216,19 @@ function printResult(result: unknown, flags: WizardFlags, message?: string) {
 }
 
 function printWizardHelp() {
-  console.log(`Akadev Pterodactyl Gateway Wizard
+  console.log(`Pterodactyl Gateway Wizard
 
 Perintah:
-  ptero-wizard create-user
-  ptero-wizard create-user --dry-run
-  ptero-wizard create-server
-  ptero-wizard create-server --dry-run
-  ptero-wizard create-server --yes
+  ptero-wizard doctor
+  ptero-wizard create-user [--dry-run] [--yes]
+  ptero-wizard create-server [--dry-run] [--yes]
 
 Catatan:
-  Wizard tidak mengelola node/location/allocation.
-  Node ID, Nest ID, dan Egg ID tetap diisi manual oleh admin.
-  Jalankan ptero-gateway ids untuk melihat daftar ID yang tersedia.`);
+  Wizard membaca node dan egg langsung dari panel.
+  Gunakan ptero-gateway plan untuk simulasi penempatan server.
+  API key dibaca dari environment atau profile config.`);
+}
+
+export async function wizardGateway(): Promise<PteroGateway> {
+  return createPtero.fromEnv();
 }

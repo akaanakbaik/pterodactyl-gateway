@@ -1,206 +1,120 @@
 #!/usr/bin/env node
 
-const rawArgs = process.argv.slice(2);
-const command = rawArgs[0] ?? "help";
-const jsonMode = rawArgs.includes("--json");
-
 const EXPLAINS: Record<string, { title: string; reason: string; fix: string[] }> = {
   DOMAIN_REQUIRED: {
     title: "Domain panel belum diisi",
-    reason: "Env PTERO_DOMAIN belum tersedia atau config createPtero belum berisi domain/panelUrl.",
+    reason: "PTERO_DOMAIN belum tersedia atau config tidak memiliki domain.",
     fix: [
-      "export PTERO_DOMAIN=\"https://panel.example.com\"",
-      "atau pakai: ptero-gateway config init --domain https://panel.example.com --ptla ptla_xxx --ptlc ptlc_xxx",
-      "jalankan ulang: ptero-gateway doctor"
+      'export PTERO_DOMAIN="https://panel.example.com"',
+      "ptero-gateway config init --domain https://panel.example.com --ptla ptla_xxx --ptlc ptlc_xxx",
+      "ptero-gateway doctor"
     ]
+  },
+  AUTH_FAILED: {
+    title: "Autentikasi API gagal",
+    reason: "PTLA atau PTLC tidak valid, kedaluwarsa, atau tidak memiliki permission.",
+    fix: ["Buat ulang API key di panel", "Simpan key melalui config init", "Jalankan doctor --json"]
   },
   PTLA_REQUIRED: {
-    title: "Application API Key belum diisi",
+    title: "Application API key belum diisi",
     reason: "Aksi admin membutuhkan PTERO_PTLA.",
-    fix: [
-      "buat Application API Key di panel admin Pterodactyl",
-      "export PTERO_PTLA=\"ptla_xxx\"",
-      "atau simpan di profile: ptero-gateway config init --domain ... --ptla ptla_xxx"
-    ]
+    fix: ["Buat Application API key di panel admin", "export PTERO_PTLA=ptla_xxx", "ptero-gateway doctor"]
   },
   PTLC_REQUIRED: {
-    title: "Client API Key belum diisi",
-    reason: "Aksi client server membutuhkan PTERO_PTLC.",
-    fix: [
-      "buat Client API Key dari account panel",
-      "export PTERO_PTLC=\"ptlc_xxx\"",
-      "atau simpan di profile: ptero-gateway config init --domain ... --ptlc ptlc_xxx"
-    ]
-  },
-  DOCKER_IMAGE_NOT_FOUND: {
-    title: "Docker image egg tidak ditemukan",
-    reason: "Egg tidak mengirim docker_image/docker_images yang bisa dipilih otomatis.",
-    fix: [
-      "cek egg ID dengan: ptero-gateway ids --nest <nestId>",
-      "pastikan egg punya Docker Images di panel",
-      "atau isi manual: --docker-image ghcr.io/parkervcp/yolks:nodejs_22"
-    ]
-  },
-  STARTUP_VARIABLE_NOT_FOUND: {
-    title: "Startup variable tidak ditemukan",
-    reason: "Nama variable yang di-set tidak cocok dengan env_variable pada egg/server.",
-    fix: [
-      "lihat variable: ptero-gateway server <identifier> env",
-      "salin nama variable dari kolom variable",
-      "jalankan: ptero-gateway server <identifier> set-env KEY VALUE --yes"
-    ]
+    title: "Client API key belum diisi",
+    reason: "Aksi client membutuhkan PTERO_PTLC.",
+    fix: ["Buat Client API key dari account panel", "export PTERO_PTLC=ptlc_xxx", "ptero-gateway doctor"]
   },
   VALIDATION_ERROR: {
     title: "Payload ditolak panel",
-    reason: "Ada field yang tidak sesuai validasi Pterodactyl.",
-    fix: [
-      "jalankan create-server dengan --dry-run dulu",
-      "cek node, nest, egg, allocation, dan feature limits",
-      "pakai --json untuk melihat payload lengkap"
-    ]
+    reason: "Ada field wajib atau tipe data yang tidak sesuai.",
+    fix: ["Jalankan create-server --dry-run", "Periksa node, nest, egg, dan allocation", "Gunakan --json untuk payload lengkap"]
   },
-  REQUEST_FAILED: {
-    title: "Request ke panel gagal",
-    reason: "Panel mengembalikan error HTTP atau response tidak sesuai.",
-    fix: [
-      "cek domain dan API key dengan: ptero-gateway doctor",
-      "pastikan endpoint didukung versi panel",
-      "coba ulang dengan --json untuk melihat response mentah"
-    ]
+  NO_FREE_ALLOCATION: {
+    title: "Tidak ada port kosong",
+    reason: "Node tidak memiliki allocation yang belum dipakai.",
+    fix: ["Tambahkan allocation di panel", "Pilih node lain", "Longgarkan port range"]
   },
-  BACKUP_LIMIT: {
-    title: "Limit backup habis",
-    reason: "Server tidak punya jatah backup atau sudah mencapai limit.",
-    fix: [
-      "cek: ptero-gateway admin server <id> limits",
-      "update: ptero-gateway admin server <id> update-limits --backups 1 --yes",
-      "lalu ulangi create-backup"
-    ]
+  SAFE_MODE_CONFIRMATION_REQUIRED: {
+    title: "Konfirmasi safe mode diperlukan",
+    reason: "Operasi destruktif membutuhkan konfirmasi eksplisit.",
+    fix: ["Tambahkan --yes", "Gunakan opsi confirm true pada SDK", "Atur safeMode false hanya untuk otomasi tepercaya"]
   },
-  EEXIST: {
-    title: "Binary global sudah ada",
-    reason: "File /usr/bin/ptero-gateway atau /usr/bin/ptg masih ada dari npm link/install lama.",
-    fix: [
-      "npm unlink -g @akaanakbaik/pterodactyl-gateway 2>/dev/null || true",
-      "rm -f /usr/bin/ptero-gateway /usr/bin/ptg",
-      "npm i -g @akaanakbaik/pterodactyl-gateway"
-    ]
+  NESTS_ENDPOINT_UNAVAILABLE: {
+    title: "Panel tidak memiliki endpoint nests",
+    reason: "Varian panel hanya menyediakan endpoint eggs.",
+    fix: ["Gunakan egg ID langsung", "Atur PTERO_NEST_ID", "Jalankan doctor untuk melihat kemampuan panel"]
   },
-  E404: {
-    title: "Package atau endpoint tidak ditemukan",
-    reason: "NPM/package/endpoint belum tersedia atau nama salah.",
-    fix: [
-      "cek nama package atau identifier server",
-      "untuk npm: npm view @akaanakbaik/pterodactyl-gateway@latest",
-      "untuk server: ptero-gateway servers lalu salin identifier"
-    ]
+  CIRCUIT_OPEN: {
+    title: "Circuit breaker terbuka",
+    reason: "Terlalu banyak request gagal berturut-turut.",
+    fix: ["Tunggu reset timeout", "Periksa kesehatan panel", "Turunkan konkurensi"]
+  },
+  PANEL_UNREACHABLE: {
+    title: "Panel tidak dapat diakses",
+    reason: "DNS, SSL, firewall, atau jaringan bermasalah.",
+    fix: ["Cek domain di browser", "Ping panel dari VPS", "Periksa konfigurasi Cloudflare"]
   }
 };
 
-if (command === "help" || command === "--help" || command === "-h") {
-  printHelp();
-} else if (command === "version" || command === "--version" || command === "-v") {
-  const { versionCommand } = await import("./meta.js");
-  versionCommand(jsonMode);
-} else if (command === "self-check") {
-  const { selfCheckCommand } = await import("./meta.js");
-  selfCheckCommand(jsonMode);
-} else if (command === "release-check") {
-  const { releaseCheckCommand } = await import("./meta.js");
-  releaseCheckCommand(jsonMode);
-} else if (command === "env-template") {
-  const content = [
-    "PTERO_DOMAIN=https://panel.example.com",
-    "PTERO_PTLA=ptla_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    "PTERO_PTLC=ptlc_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-  ].join("\n");
-  console.log(content);
-} else if (command === "config") {
-  const { configCommand } = await import("./config.js");
-  await configCommand(rawArgs.slice(1));
-} else if (command === "templates") {
-  const { templatesCommand } = await import("./templates.js");
-  templatesCommand(rawArgs.slice(1));
-} else if (command === "explain") {
-  const code = (rawArgs[1] ?? "").toUpperCase();
-  const result = EXPLAINS[code];
-  if (jsonMode) {
-    console.log(JSON.stringify(result ?? { error: "UNKNOWN_EXPLAIN", code }, null, 2));
-  } else if (!code || !result) {
-    console.log(`Kode error tersedia:\n${Object.keys(EXPLAINS).map(item => `- ${item}`).join("\n")}\n\nContoh: ptero-gateway explain DOMAIN_REQUIRED`);
-  } else {
-    console.log(`${result.title}\n\nPenyebab:\n${result.reason}\n\nCara perbaikan:\n${result.fix.map((item, index) => `${index + 1}. ${item}`).join("\n")}`);
+async function main() {
+  const raw = process.argv.slice(2);
+  const command = raw[0] ?? "help";
+  const jsonMode = raw.includes("--json");
+
+  if (command === "version" || command === "--version" || command === "-v") {
+    const { versionCommand } = await import("./meta.js");
+    versionCommand(jsonMode);
+    return;
   }
-} else {
-  const { applyConfigProfile } = await import("./config.js");
-  applyConfigProfile();
-  await import("./cli.js");
+  if (command === "self-check") {
+    const { selfCheckCommand } = await import("./meta.js");
+    selfCheckCommand(jsonMode);
+    return;
+  }
+  if (command === "release-check") {
+    const { releaseCheckCommand } = await import("./meta.js");
+    releaseCheckCommand(jsonMode);
+    return;
+  }
+  if (command === "env-template") {
+    const { environmentTemplate } = await import("./env.js");
+    console.log(environmentTemplate());
+    return;
+  }
+  if (command === "explain") {
+    const code = (raw[1] ?? "").toUpperCase();
+    const result = EXPLAINS[code];
+    if (jsonMode) console.log(JSON.stringify(result ?? { error: "UNKNOWN_EXPLAIN", code, available: Object.keys(EXPLAINS) }, null, 2));
+    else if (!code || !result) console.log(`Kode error tersedia:\n${Object.keys(EXPLAINS).map(item => `- ${item}`).join("\n")}\n\nContoh: ptero-gateway explain AUTH_FAILED`);
+    else console.log(`${result.title}\n\nPenyebab:\n${result.reason}\n\nPerbaikan:\n${result.fix.map((item, index) => `${index + 1}. ${item}`).join("\n")}`);
+    return;
+  }
+  if (command === "config") {
+    const { loadEnvFiles } = await import("./env.js");
+    const { applyConfigProfile, configCommand } = await import("./config.js");
+    loadEnvFiles();
+    applyConfigProfile();
+    await configCommand(raw.slice(1));
+    return;
+  }
+  if (command === "templates") {
+    const { templatesCommand } = await import("./templates.js");
+    templatesCommand(raw.slice(1));
+    return;
+  }
+
+  const { runCli } = await import("./cli.js");
+  await runCli(raw);
 }
 
-function printHelp() {
-  console.log(`Akadev Pterodactyl Gateway
-
-Perintah:
-  ptero-gateway version [--json]
-  ptero-gateway self-check [--json]
-  ptero-gateway release-check [--json]
-  ptero-gateway config help
-  ptero-gateway config init --domain https://panel.example.com --ptla ptla_xxx --ptlc ptlc_xxx
-  ptero-gateway config list
-  ptero-gateway config use <profile>
-  ptero-gateway config rename <old> <new>
-  ptero-gateway config delete <profile> --yes
-  ptero-gateway config doctor
-  ptero-gateway templates list
-  ptero-gateway templates show nodejs-bot
-  ptero-gateway templates command nodejs-bot --name "bot saya" --email user@example.com --node 1 --nest 5 --egg 18
-  ptero-gateway presets [--json]
-  ptero-gateway explain <ERROR_CODE> [--json]
-  ptero-gateway env-template
-  ptero-gateway doctor [--json]
-  ptero-gateway connect [--json]
-  ptero-gateway ids [--nest <nestId>] [--json]
-  ptero-gateway servers [--json]
-  ptero-gateway admin users [--json]
-  ptero-gateway admin servers [--json]
-  ptero-gateway admin create-user --username aka_test --email user@example.com --password "secret" --yes
-  ptero-gateway admin create-server --name "aka test" --email user@example.com --node 1 --nest 5 --egg 18 --preset basic --dry-run
-  ptero-gateway admin create-server --name "aka test" --email user@example.com --node 1 --nest 5 --egg 18 --preset standard --yes
-  ptero-gateway admin server <serverId> detail [--json]
-  ptero-gateway admin server <serverId> limits [--json]
-  ptero-gateway admin server <serverId> update-limits --backups 1 --yes
-  ptero-gateway admin server <serverId> suspend --yes
-  ptero-gateway admin server <serverId> unsuspend --yes
-  ptero-gateway admin server <serverId> reinstall --yes
-  ptero-gateway probe <identifier> [--json]
-  ptero-gateway server <identifier> summary [--json]
-  ptero-gateway server <identifier> resources [--json]
-  ptero-gateway server <identifier> files [directory] [--json]
-  ptero-gateway server <identifier> read <file>
-  ptero-gateway server <identifier> startup|env [--json]
-  ptero-gateway server <identifier> network|ports [--json]
-  ptero-gateway server <identifier> databases [--json]
-  ptero-gateway server <identifier> backups [--json]
-  ptero-gateway server <identifier> backup <uuid> [--json]
-  ptero-gateway server <identifier> delete-backup <uuid> --yes
-  ptero-gateway server <identifier> schedules [--json]
-  ptero-gateway server <identifier> write /tmp/test.txt "isi file" --yes
-  ptero-gateway server <identifier> write /index.js "isi file" --yes --allow-any-path
-  ptero-gateway server <identifier> init-node-alive --yes
-  ptero-gateway server <identifier> set-env KEY VALUE --yes
-  ptero-gateway server <identifier> create-backup --name "backup-name" --yes
-  ptero-gateway server <identifier> start --yes
-  ptero-gateway server <identifier> stop --yes
-  ptero-gateway server <identifier> restart --yes
-  ptero-gateway server <identifier> kill --yes
-  ptero-gateway server <identifier> command "npm start" --yes
-
-Preset:
-  mini, basic, standard, premium, unlimited
-  Spek preset bisa dioverride dengan --memory, --disk, --cpu, --databases, --allocations, --backups.
-
-Env:
-  PTERO_DOMAIN=https://panel.example.com
-  PTERO_PTLA=ptla_xxx
-  PTERO_PTLC=ptlc_xxx`);
-}
+main().catch(async error => {
+  const jsonMode = process.argv.includes("--json");
+  if (jsonMode) {
+    console.log(JSON.stringify({ ok: false, error: { code: "CLI_ERROR", message: error instanceof Error ? error.message : String(error) } }, null, 2));
+  } else {
+    const { explainError } = await import("./errors.js");
+    console.error(explainError(error));
+  }
+  process.exitCode = 1;
+});

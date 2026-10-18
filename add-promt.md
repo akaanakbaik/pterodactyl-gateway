@@ -6,7 +6,7 @@ Tujuan prompt ini adalah menghasilkan integrasi yang aman, rapi, mudah dirawat, 
 
 ## Prompt utama siap pakai
 
-Tolong integrasikan package `@akaanakbaik/pterodactyl-gateway` versi `1.0.0` ke project saya dengan standar production.
+Tolong integrasikan package `@akaanakbaik/pterodactyl-gateway` versi `1.5.0` ke project saya dengan standar production.
 
 Package ini adalah SDK TypeScript dan CLI untuk Pterodactyl Panel. Gunakan package ini untuk:
 
@@ -18,6 +18,8 @@ Package ini adalah SDK TypeScript dan CLI untuk Pterodactyl Panel. Gunakan packa
 - mengelola file server;
 - mengubah startup variables;
 - melihat resource server;
+- merencanakan kapasitas dan penempatan server (bin packing, first fit, best fit, worst fit);
+- menunggu instalasi server selesai secara idempotent;
 - mengelola backup;
 - mengelola schedule;
 - mengirim power signal;
@@ -393,10 +395,12 @@ Saat AI mengintegrasikan package ini, pastikan output akhirnya memiliki:
 
 ## Catatan versi
 
-Gunakan versi utama `1.0.0` atau `latest`.
+Gunakan versi `1.5.0` atau `latest`.
 
 ```bash
-npm i @akaanakbaik/pterodactyl-gateway@1.0.0
+npm i @akaanakbaik/pterodactyl-gateway@1.5.0
 ```
+
+Mulai `1.5.0` tersedia dual package ESM dan CommonJS dengan types terpisah, sehingga `import` dan `require` sama-sama didukung TypeScript maupun JavaScript.
 
 Jika menemukan dokumentasi lama yang menyebut versi sebelum `1.0.0`, arahkan ke README terbaru dan gunakan `latest`.

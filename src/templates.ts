@@ -13,12 +13,33 @@ const TEMPLATES = {
     dockerImage: "auto",
     recommendedFiles: ["package.json", "src/index.js"]
   },
+  "nodejs-worker": {
+    description: "Worker atau queue consumer Node.js dengan preset basic.",
+    preset: "basic",
+    startup: "npm start",
+    dockerImage: "auto",
+    recommendedFiles: ["package.json", "worker.js"]
+  },
   "wa-bot": {
     description: "Bot WhatsApp/Baileys dengan preset standard.",
     preset: "standard",
     startup: "npm start",
     dockerImage: "auto",
     recommendedFiles: ["package.json", "index.js", "sessions/"]
+  },
+  "telegram-bot": {
+    description: "Bot Telegram dengan preset basic.",
+    preset: "basic",
+    startup: "npm start",
+    dockerImage: "auto",
+    recommendedFiles: ["package.json", "index.js"]
+  },
+  "discord-bot": {
+    description: "Bot Discord dengan preset basic.",
+    preset: "basic",
+    startup: "npm start",
+    dockerImage: "auto",
+    recommendedFiles: ["package.json", "index.js"]
   },
   "python-bot": {
     description: "Bot Python ringan dengan preset basic.",
@@ -27,7 +48,28 @@ const TEMPLATES = {
     dockerImage: "auto",
     recommendedFiles: ["requirements.txt", "main.py"]
   },
-  "blank": {
+  "minecraft-java": {
+    description: "Server Minecraft Java dengan preset premium.",
+    preset: "premium",
+    startup: "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}",
+    dockerImage: "ghcr.io/parkervcp/yolks:java_21",
+    recommendedFiles: ["server.properties", "server.jar"]
+  },
+  "minecraft-bedrock": {
+    description: "Server Minecraft Bedrock dengan preset premium.",
+    preset: "premium",
+    startup: "./bedrock_server",
+    dockerImage: "ghcr.io/parkervcp/yolks:debian",
+    recommendedFiles: ["server.properties", "bedrock_server"]
+  },
+  laravel: {
+    description: "Aplikasi Laravel dengan preset standard.",
+    preset: "standard",
+    startup: "php artisan serve --host 0.0.0.0 --port {{SERVER_PORT}}",
+    dockerImage: "ghcr.io/parkervcp/yolks:php_8.3",
+    recommendedFiles: ["artisan", "composer.json", "public/"]
+  },
+  blank: {
     description: "Server kosong untuk upload manual.",
     preset: "mini",
     startup: "bash",
@@ -72,10 +114,10 @@ export function templatesCommand(args: string[]) {
     const email = getOption(args, "--email") ?? "user@example.com";
     const node = getOption(args, "--node") ?? "1";
     const nest = getOption(args, "--nest") ?? "5";
-    const egg = getOption(args, "--egg") ?? "18";
+    const egg = getOption(args, "--egg") ?? "15";
     const username = getOption(args, "--username");
     const pieces = [
-      "ptero-gateway admin create-server",
+      "ptero-gateway create-server",
       `--name ${quote(serverName)}`,
       `--email ${quote(email)}`,
       username ? `--username ${quote(username)}` : "",
@@ -84,6 +126,7 @@ export function templatesCommand(args: string[]) {
       `--egg ${quote(egg)}`,
       `--preset ${quote(template.preset)}`,
       `--startup ${quote(template.startup)}`,
+      template.dockerImage !== "auto" ? `--docker-image ${quote(template.dockerImage)}` : "",
       "--dry-run"
     ].filter(Boolean);
     console.log(pieces.join(" "));
@@ -94,7 +137,7 @@ export function templatesCommand(args: string[]) {
 }
 
 function getTemplate(name: string | undefined) {
-  if (!name) throw new Error(`Template wajib diisi. Jalankan: ptero-gateway templates list`);
+  if (!name) throw new Error("Template wajib diisi. Jalankan: ptero-gateway templates list");
   if (!(name in TEMPLATES)) throw new Error(`Template tidak dikenal: ${name}`);
   return TEMPLATES[name as TemplateName];
 }
@@ -102,7 +145,9 @@ function getTemplate(name: string | undefined) {
 function getOption(args: string[], name: string) {
   const index = args.indexOf(name);
   if (index < 0) return undefined;
-  return args[index + 1];
+  const value = args[index + 1];
+  if (!value || value.startsWith("--")) return undefined;
+  return value;
 }
 
 function quote(value: string) {
@@ -135,14 +180,14 @@ function table(rows: Array<Record<string, string>>, columns: string[]) {
 }
 
 function printTemplatesHelp() {
-  console.log(`Akadev Pterodactyl Gateway Templates
+  console.log(`Pterodactyl Gateway Templates
 
 Perintah:
   ptero-gateway templates list
   ptero-gateway templates show nodejs-bot
-  ptero-gateway templates command nodejs-bot --name "bot saya" --email user@example.com --node 1 --nest 5 --egg 18
+  ptero-gateway templates command nodejs-bot --name "bot saya" --email user@example.com --node 1 --nest 5 --egg 15
 
 Catatan:
-  Template hanya membuat rekomendasi command create-server.
-  Template tidak membuat node/location/allocation dan tidak mengeksekusi server otomatis.`);
+  Template menghasilkan rekomendasi command create-server.
+  Template tidak membuat node, location, atau allocation otomatis.`);
 }

@@ -8,6 +8,71 @@ export type CpuInput = number | string;
 
 export type ServerPowerSignal = "start" | "stop" | "restart" | "kill";
 
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+
+export type ApiScope = "application" | "client";
+
+export type QueryValue = string | number | boolean | null | undefined;
+
+export type QueryInput = Record<string, QueryValue | QueryValue[]>;
+
+export type RetryConfig = {
+  retries?: number;
+  baseDelay?: number;
+  maxDelay?: number;
+  retryOn?: number[];
+  retryOnNetwork?: boolean;
+};
+
+export type RateLimitConfig = {
+  requestsPerSecond?: number;
+  burst?: number;
+};
+
+export type CacheConfig = {
+  enabled?: boolean;
+  ttl?: number;
+  maxEntries?: number;
+};
+
+export type CircuitBreakerConfig = {
+  enabled?: boolean;
+  failureThreshold?: number;
+  resetTimeout?: number;
+  halfOpenMax?: number;
+};
+
+export type RequestHookContext = {
+  api: ApiScope;
+  method: HttpMethod;
+  url: string;
+  attempt: number;
+};
+
+export type ResponseHookContext = RequestHookContext & {
+  status: number;
+  duration: number;
+  cached: boolean;
+};
+
+export type RetryHookContext = RequestHookContext & {
+  delay: number;
+  status?: number;
+  error: string;
+};
+
+export type ErrorHookContext = RequestHookContext & {
+  status?: number;
+  error: string;
+};
+
+export type GatewayHooks = {
+  onRequest?: (context: RequestHookContext) => void;
+  onResponse?: (context: ResponseHookContext) => void;
+  onRetry?: (context: RetryHookContext) => void;
+  onError?: (context: ErrorHookContext) => void;
+};
+
 export type PteroConfig = {
   domain?: string;
   panelUrl?: string;
@@ -21,12 +86,15 @@ export type PteroConfig = {
   debug?: boolean;
   fetcher?: typeof fetch;
   presets?: Record<string, ServerSpecsInput>;
-  retry?: {
-    retries?: number;
-    baseDelay?: number;
-    maxDelay?: number;
-    retryOn?: number[];
-  };
+  retry?: RetryConfig;
+  rateLimit?: RateLimitConfig;
+  cache?: CacheConfig;
+  circuitBreaker?: CircuitBreakerConfig;
+  hooks?: GatewayHooks;
+  defaultNodeId?: number;
+  defaultNestId?: number;
+  defaultEggId?: number;
+  nodeStrategy?: PlacementStrategy;
 };
 
 export type ConnectResult = {
@@ -51,10 +119,18 @@ export type DoctorCheck = {
   fix?: string;
 };
 
+export type PanelCapabilities = {
+  nests: boolean;
+  eggs: boolean;
+  applicationApi: boolean;
+  clientApi: boolean;
+};
+
 export type DoctorReport = {
   ok: boolean;
   mode: PteroMode;
   checks: DoctorCheck[];
+  capabilities?: PanelCapabilities;
 };
 
 export type ProgressStep = {
@@ -66,6 +142,7 @@ export type ProgressStep = {
 export type OperationOptions = {
   dryRun?: boolean;
   raw?: boolean;
+  waitForInstall?: boolean | number;
   onProgress?: (step: ProgressStep) => void;
 };
 
@@ -87,6 +164,7 @@ export type NormalizedUser = {
   lastName?: string;
   administrator?: boolean;
   generatedPassword?: string;
+  created?: boolean;
   raw?: unknown;
 };
 
@@ -102,14 +180,25 @@ export type ServerSpecsInput = {
   backups: number;
 };
 
-export type AllocationStrategy = "top" | "lowest-port" | "highest-port" | "random" | "range";
+export type AllocationStrategy =
+  | "top"
+  | "lowest-port"
+  | "highest-port"
+  | "random"
+  | "range"
+  | "best-fit"
+  | "spread"
+  | "contiguous";
 
-export type AllocationInput = "auto" | {
-  default?: number | "auto";
-  additional?: number[] | "auto";
-  strategy?: AllocationStrategy;
-  portRange?: [number, number];
-};
+export type AllocationInput =
+  | "auto"
+  | {
+      default?: number | "auto";
+      additional?: number[] | "auto";
+      strategy?: AllocationStrategy;
+      portRange?: [number, number];
+      seed?: number;
+    };
 
 export type CreateSmartServerInput = {
   name: string;
@@ -121,7 +210,7 @@ export type CreateSmartServerInput = {
   autoCreateUser?: boolean;
   description: string;
   nodeId: number;
-  nestId: number;
+  nestId?: number;
   eggId: number;
   specs?: ServerSpecsInput;
   preset?: string;
@@ -132,6 +221,7 @@ export type CreateSmartServerInput = {
   allocation?: AllocationInput;
   startOnCompletion?: boolean;
   oomDisabled?: boolean;
+  skipScripts?: boolean;
 };
 
 export type PreviewCreateServer = {
@@ -154,10 +244,16 @@ export type NormalizedServer = {
   identifier?: string;
   uuid?: string;
   name?: string;
+  user?: {
+    id: number;
+    email?: string;
+    username?: string;
+    created?: boolean;
+    pending?: boolean;
+    generatedPassword?: string;
+  };
   raw?: unknown;
 };
-
-export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 
 export type PteroResource<T> = {
   object?: string;
@@ -179,18 +275,121 @@ export type PteroCollection<T> = {
   meta?: { pagination?: PteroPagination };
 };
 
-export type PteroRequestOptions = {
-  api: "application" | "client";
+export type RequestOptions = {
+  api: ApiScope;
   method?: HttpMethod;
   path: string;
+  query?: QueryInput;
   body?: unknown;
-  contentType?: "json" | "text";
+  contentType?: "json" | "text" | "multipart";
   responseType?: "json" | "text";
   rejectHtml?: boolean;
   retryUnsafe?: boolean;
+  cache?: boolean | number;
+  dedupe?: boolean;
+  timeout?: number;
+  signal?: AbortSignal;
+  headers?: Record<string, string>;
 };
 
-export interface PteroAppUser {
+export type PteroRequestOptions = RequestOptions;
+
+export type GatewayMetrics = {
+  requests: number;
+  successes: number;
+  failures: number;
+  retries: number;
+  cacheHits: number;
+  cacheMisses: number;
+  circuitOpenings: number;
+  rateLimitWaits: number;
+  byStatus: Record<string, number>;
+  latency: {
+    min: number;
+    max: number;
+    mean: number;
+    p50: number;
+    p95: number;
+    p99: number;
+  };
+  startedAt: string;
+  uptimeMs: number;
+};
+
+export type NodeCapacity = {
+  nodeId: number;
+  name: string;
+  memory: { total: number; allocated: number; free: number; percent: number };
+  disk: { total: number; allocated: number; free: number; percent: number };
+  allocations: { total: number; assigned: number; free: number; fragmentation: number; largestGap: number };
+  servers: number;
+  score: number;
+  unlimited: boolean;
+};
+
+export type PlacementStrategy = "balanced" | "pack" | "spread" | "memory" | "disk" | "ports";
+
+export type PlacementRequest = {
+  specs: ServerSpecsInput;
+  nodes: unknown[];
+  allocations?: Record<number, unknown[]>;
+  servers?: unknown[];
+  strategy?: PlacementStrategy;
+  reservePercent?: number;
+  requirePorts?: number;
+};
+
+export type PlacementCandidate = {
+  nodeId: number;
+  nodeName: string;
+  feasible: boolean;
+  score: number;
+  freeMemory: number;
+  freeDisk: number;
+  freePorts: number;
+  utilization: number;
+  reasons: string[];
+};
+
+export type PlacementPlan = {
+  ok: boolean;
+  strategy: PlacementStrategy;
+  requiredPorts: number;
+  selected: PlacementCandidate | null;
+  candidates: PlacementCandidate[];
+  message?: string;
+};
+
+export type CapacityForecast = {
+  nodeId: number;
+  serverCapacity: number;
+  memoryCapacity: number;
+  diskCapacity: number;
+  portCapacity: number;
+  limitingFactor: "memory" | "disk" | "ports" | "none";
+};
+
+export type BulkResult<T = unknown> = {
+  total: number;
+  success: number;
+  failed: number;
+  results: Array<{ index: number; ok: boolean; value?: T; error?: string }>;
+};
+
+export type BulkOptions = {
+  concurrency?: number;
+  stopOnError?: boolean;
+  onProgress?: (done: number, total: number) => void;
+};
+
+export type WaitOptions = {
+  timeout?: number;
+  interval?: number;
+  signal?: AbortSignal;
+  onPoll?: (snapshot: unknown) => void;
+};
+
+export type PteroAppUser = {
   id: number;
   external_id: string | null;
   uuid: string;
@@ -203,9 +402,9 @@ export interface PteroAppUser {
   "2fa": boolean;
   created_at: string;
   updated_at: string;
-}
+};
 
-export interface PteroAppNode {
+export type PteroAppNode = {
   id: number;
   uuid: string;
   public: boolean;
@@ -224,11 +423,12 @@ export interface PteroAppNode {
   daemon_listen: number;
   daemon_sftp: number;
   daemon_base: string;
+  allocated_resources?: { memory: number; disk: number };
   created_at: string;
   updated_at: string;
-}
+};
 
-export interface PteroAppServer {
+export type PteroAppServer = {
   id: number;
   external_id: string | null;
   uuid: string;
@@ -254,7 +454,7 @@ export interface PteroAppServer {
   user: number;
   node: number;
   allocation: number;
-  nest: number;
+  nest?: number;
   egg: number;
   pack: number | null;
   container: {
@@ -262,12 +462,13 @@ export interface PteroAppServer {
     image: string;
     installed: number;
     environment: Record<string, string | number | boolean>;
+    skip_scripts?: boolean;
   };
   created_at: string;
   updated_at: string;
-}
+};
 
-export interface PteroClientServer {
+export type PteroClientServer = {
   server_owner: boolean;
   identifier: string;
   uuid: string;
@@ -307,12 +508,44 @@ export interface PteroClientServer {
       }>;
     };
   };
-}
+};
 
-export interface PteroWebSocketAuth {
+export type PteroWebSocketAuth = {
   token: string;
   socket: string;
-}
+};
+
+export type PteroWebSocketOptions = {
+  reconnect?: boolean;
+  maxReconnectAttempts?: number;
+  reconnectBaseDelay?: number;
+  reconnectMaxDelay?: number;
+  heartbeatInterval?: number;
+  timeout?: number;
+  autoAuthenticate?: boolean;
+};
+
+export type PteroWebSocketStats = {
+  connected: boolean;
+  reconnects: number;
+  messagesSent: number;
+  messagesReceived: number;
+  connectedAt?: number;
+  lastMessageAt?: number;
+};
+
+export type PteroServerResources = {
+  current_state: string;
+  is_suspended: boolean;
+  resources: {
+    memory_bytes: number;
+    cpu_absolute: number;
+    disk_bytes: number;
+    network_rx_bytes: number;
+    network_tx_bytes: number;
+    uptime: number;
+  };
+};
 
 export type UpdateServerSpecsInput = {
   memory?: SizeInput;
@@ -370,4 +603,60 @@ export type SendEmailOptions = {
   html?: string;
   attachments?: EmailAttachment[];
   smtp?: SmtpConfig;
+};
+
+export type BackupExportOptions = {
+  targetEmail?: string;
+  smtp?: SmtpConfig;
+  ignored?: string[];
+  pollInterval?: number;
+  timeout?: number;
+  keepPanelBackup?: boolean;
+  attachmentLimitBytes?: number;
+  format?: "zip" | "tar.gz";
+};
+
+export type BackupExportResult = {
+  success: boolean;
+  serverName: string;
+  email: string;
+  fileName: string;
+  size: string;
+  bytes: number;
+  backupUuid: string;
+  panelBackupRetained: boolean;
+};
+
+export type ScheduleTask = {
+  action: "power" | "command" | "backup";
+  payload: string;
+  timeOffset?: number;
+  continueOnFailure?: boolean;
+};
+
+export type ScheduleDefinition = {
+  name: string;
+  cron: string;
+  onlyWhenOnline?: boolean;
+  isActive?: boolean;
+  tasks: ScheduleTask[];
+};
+
+export type FileEntry = {
+  name: string;
+  mode: string;
+  mode_bits: string;
+  size: number;
+  is_file: boolean;
+  is_symlink: boolean;
+  mimetype: string;
+  created_at: string;
+  modified_at: string;
+  directory?: string;
+  file?: boolean;
+};
+
+export type FileListResult = {
+  object?: string;
+  data: FileEntry[];
 };
