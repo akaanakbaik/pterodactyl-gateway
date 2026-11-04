@@ -1,6 +1,6 @@
 {
   "name": "@akaanakbaik/pterodactyl-gateway",
-  "version": "1.6.0-beta",
+  "version": "1.6.0",
   "description": "Gateway Pterodactyl profesional untuk JavaScript dan TypeScript dengan dukungan Pterodactyl v1 dan v2: Application API, Client API, Admin API v2, perencanaan kapasitas, WebSocket, backup, dan email.",
   "type": "module",
   "main": "./dist/index.cjs",

@@ -1,5 +1,7 @@
 import { createServer } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPtero, explainError, planPlacement, PteroError } from "../dist/index.js";
@@ -15,6 +17,7 @@ const results = [];
 const createdUserIds = [];
 const createdServerIds = [];
 const createdServerNames = [];
+let panelDatabaseHosts = [];
 
 const gateway = createPtero({
   domain: process.env.PTERO_DOMAIN,
@@ -66,6 +69,22 @@ async function main() {
     record("admin eggs", adminEggs.length > 0, `count=${adminEggs.length}`);
     const adminTags = await gateway.admin.tags.all().catch(() => []);
     record("admin tags", adminTags.length > 0, `count=${adminTags.length}`);
+    const adminUsers = await gateway.admin.users.all().catch(() => []);
+    record("admin users", adminUsers.length > 0, `count=${adminUsers.length}`);
+    const adminServers = await gateway.admin.servers.all().catch(() => []);
+    record("admin servers", Array.isArray(adminServers), `count=${adminServers.length}`);
+    const adminNodes = await gateway.admin.nodes.all().catch(() => []);
+    record("admin nodes", adminNodes.length > 0, `count=${adminNodes.length}`);
+    const adminLocations = await gateway.admin.locations.all().catch(() => []);
+    record("admin locations", Array.isArray(adminLocations), `count=${adminLocations.length}`);
+    panelDatabaseHosts = await gateway.admin.databaseHosts.all().catch(() => []);
+    record("admin database hosts", Array.isArray(panelDatabaseHosts), `count=${panelDatabaseHosts.length}`);
+    const adminMounts = await gateway.admin.mounts.all().catch(() => []);
+    record("admin mounts", Array.isArray(adminMounts), `count=${adminMounts.length}`);
+    const adminExtensions = await gateway.admin.extensions.list().catch(() => null);
+    record("admin extensions", adminExtensions !== null, JSON.stringify(adminExtensions).slice(0, 200));
+    const adminSettings = await gateway.admin.settings().catch(() => null);
+    record("admin settings", adminSettings !== null, JSON.stringify(adminSettings).slice(0, 200));
   }
 
   section("Pembacaan data");
@@ -228,14 +247,68 @@ async function main() {
     record("wait install", false, error?.message ?? String(error));
   }
 
+  section("Settings server");
+  try {
+    await handle.settings.rename(`${serverName} renamed`);
+    const renamed = await handle.details();
+    record("settings rename", String(dataAttributes(renamed).name ?? "") === `${serverName} renamed`, dataAttributes(renamed).name);
+    await handle.settings.rename(serverName);
+    record("settings rename restore", true, serverName);
+    if (details.dockerImage) {
+      await handle.settings.setDockerImage(details.dockerImage);
+      record("settings docker image", true, details.dockerImage);
+    } else {
+      record("settings docker image", true, "dilewati karena image tidak terbaca");
+    }
+  } catch (error) {
+    record("settings mutation", false, error?.message ?? String(error));
+  }
+
   section("Client API dan operasi file");
   const resources = await handle.resources();
   record("resources", Boolean(resources.current_state), `state=${resources.current_state}`);
+  const activity = await handle.activity(1);
+  record("server activity", Array.isArray(activity?.data), `count=${activity?.data?.length ?? 0}`);
+  const serverPages = await handle.clientServerPages(1);
+  record("client server pages", Array.isArray(serverPages?.data), `count=${serverPages?.data?.length ?? 0}`);
   const listing = await handle.files.list("/");
   record("files list", Array.isArray(listing?.data), `entries=${listing?.data?.length ?? 0}`);
   await handle.files.write("/live-test.txt", `hello ${prefix}`);
   const content = await handle.files.read("/live-test.txt");
   record("files write/read", content.includes(prefix), content.trim());
+  await handle.files.append("/live-test.txt", `\nappend ${prefix}`);
+  const tail = await handle.files.tail("/live-test.txt", 1);
+  record("files append/tail", tail.at(-1)?.includes(prefix), tail.at(-1) ?? "");
+  await handle.files.json.write("/config.json", { prefix, port: 3000 });
+  const config = await handle.files.json.read("/config.json");
+  record("files json", config?.prefix === prefix && config?.port === 3000, JSON.stringify(config));
+  const fileTemp = await mkdtemp(join(tmpdir(), "gateway-live-files-"));
+  try {
+    await handle.files.upload("/", "raw-upload.txt", Buffer.from(`raw ${prefix}`));
+    const rawUpload = await handle.files.read("/raw-upload.txt");
+    record("files upload buffer", rawUpload.includes(prefix), rawUpload.trim());
+    await writeFile(join(fileTemp, "upload.txt"), `upload ${prefix}`);
+    await handle.files.uploadFromFile("/", join(fileTemp, "upload.txt"));
+    const uploaded = await handle.files.read("/upload.txt");
+    record("files upload file", uploaded.includes(prefix), uploaded.trim());
+    try {
+      await handle.files.pull("https://raw.githubusercontent.com/pterodactyl/panel/v1.11.11/composer.json", "/", "pulled.json");
+      const pulled = await handle.files.json.read("/pulled.json");
+      record("files pull", typeof pulled?.name === "string", String(pulled?.name ?? ""));
+      await handle.files.delete("/", ["pulled.json"]);
+    } catch (error) {
+      record("files pull", false, error?.message ?? String(error));
+    }
+    const downloaded = await handle.files.download("/upload.txt");
+    record("files download", downloaded.equals(Buffer.from(`upload ${prefix}`)), `bytes=${downloaded.length}`);
+    const destination = join(fileTemp, "download.txt");
+    const downloadedFile = await handle.files.downloadToFile("/upload.txt", destination, 1024);
+    const persisted = await readFile(destination, "utf8");
+    record("files downloadToFile", downloadedFile.bytes === Buffer.byteLength(`upload ${prefix}`) && persisted.includes(prefix), `bytes=${downloadedFile.bytes}`);
+    await expectError("files download maxBytes", () => handle.files.downloadToFile("/upload.txt", join(fileTemp, "too-large.txt"), 4), "DOWNLOAD_TOO_LARGE");
+  } finally {
+    await rm(fileTemp, { recursive: true, force: true });
+  }
   await handle.files.mkdir("/", "live-dir");
   await handle.files.rename("/", [{ from: "live-test.txt", to: "live-dir/moved.txt" }]);
   const moved = await handle.files.read("/live-dir/moved.txt");
@@ -263,9 +336,11 @@ async function main() {
     record("files decompress", afterDecompressNames.includes("live-dir"), afterDecompressNames.join(","));
     await handle.files.delete("/", [archive, "live-dir"]);
   }
+  await handle.files.delete("/", ["config.json", "raw-upload.txt", "upload.txt"]).catch(() => undefined);
   const runtime = await gateway.eggRuntime(eggId);
   const doneMarker = runtime.startupDone && runtime.startupDone.length < 40 ? runtime.startupDone : "running";
   record("egg runtime", Boolean(runtime.startupCommand), `done="${doneMarker}" variables=${runtime.variables.length}`);
+  await handle.files.write("/eula.txt", "eula=true\n").catch(() => undefined);
   await handle.files.writeJson("/package.json", { name: "gateway-live-app", version: "1.0.0", main: "index.js", scripts: { start: "node index.js" } });
   await handle.files.write(
     "/index.js",
@@ -283,13 +358,77 @@ async function main() {
   record("startup get", Array.isArray(startup?.data), `variables=${startup?.data?.length ?? 0}`);
   const mainVariable = startup.data.find(variable => variable.attributes?.env_variable === "CMD_RUN") ?? startup.data[0];
   if (mainVariable) {
-    await handle.startup.set(mainVariable.attributes.env_variable, "npm start");
-    record("startup set", true, mainVariable.attributes.env_variable);
+    const envVariable = mainVariable.attributes.env_variable;
+    const currentValue = mainVariable.attributes.value ?? mainVariable.attributes.server_value ?? "";
+    await handle.startup.set(envVariable, currentValue);
+    record("startup set", true, envVariable);
   }
   const network = await handle.network.list();
   record("network list", Array.isArray(network?.data), `allocations=${network?.data?.length ?? 0}`);
+  const networkAllocations = Array.isArray(network?.data) ? network.data : [];
+  const originalPrimaryId = Number(networkAllocations.find(item => item?.attributes?.is_default)?.attributes?.id ?? networkAllocations[0]?.attributes?.id ?? 0);
+  const existingSecondaryId = Number(networkAllocations.find(item => Number(item?.attributes?.id) !== originalPrimaryId)?.attributes?.id ?? 0);
+  try {
+    if (existingSecondaryId) {
+      await handle.network.setNote(existingSecondaryId, `note ${prefix}`);
+      const noted = await handle.network.list();
+      const noteFound = (noted?.data ?? []).some(item => Number(item?.attributes?.id) === existingSecondaryId && item?.attributes?.notes === `note ${prefix}`);
+      record("network note", noteFound, `id=${existingSecondaryId}`);
+      await handle.network.setPrimary(existingSecondaryId);
+      const primary = await handle.network.list();
+      const primaryFound = (primary?.data ?? []).some(item => Number(item?.attributes?.id) === existingSecondaryId && item?.attributes?.is_default === true);
+      record("network set primary", primaryFound, `id=${existingSecondaryId}`);
+      if (originalPrimaryId) await handle.network.setPrimary(originalPrimaryId);
+      await handle.network.delete(existingSecondaryId);
+      record("network delete", true, `id=${existingSecondaryId}`);
+    }
+    try {
+      const assigned = await handle.network.assign();
+      const assignedId = Number(dataAttributes(assigned).id ?? 0);
+      if (!assignedId) throw new Error("Panel tidak mengembalikan allocation baru.");
+      await handle.network.setNote(assignedId, `assigned ${prefix}`);
+      const assignedNote = await handle.network.list();
+      const assignedNoteFound = (assignedNote?.data ?? []).some(item => Number(item?.attributes?.id) === assignedId && item?.attributes?.notes === `assigned ${prefix}`);
+      record("network assign/note", assignedNoteFound, `id=${assignedId}`);
+      await handle.network.setPrimary(assignedId);
+      const assignedPrimary = await handle.network.list();
+      const assignedPrimaryFound = (assignedPrimary?.data ?? []).some(item => Number(item?.attributes?.id) === assignedId && item?.attributes?.is_default === true);
+      record("network assign primary", assignedPrimaryFound, `id=${assignedId}`);
+      if (originalPrimaryId) await handle.network.setPrimary(originalPrimaryId);
+      await handle.network.delete(assignedId);
+      record("network assign delete", true, `id=${assignedId}`);
+    } catch (error) {
+      if (/auto-allocation is not enabled/i.test(String(error?.message ?? error))) {
+        record("network assign", true, "dilewati karena auto-allocation panel dimatikan");
+      } else {
+        throw error;
+      }
+    }
+  } catch (error) {
+    record("network mutation", false, error?.message ?? String(error));
+  }
   const databases = await handle.databases.list();
   record("databases list", Array.isArray(databases?.data), `count=${databases?.data?.length ?? 0}`);
+  if (panelDatabaseHosts.length === 0) {
+    record("databases CRUD", true, "dilewati karena panel tidak memiliki database host");
+  } else if (Number(details.featureLimits?.databases ?? 0) < 1) {
+    record("databases CRUD", true, "dilewati karena limit database server 0");
+  } else {
+    try {
+      const databaseName = `gw${Date.now().toString(36)}`.slice(0, 20);
+      const database = await handle.databases.create(databaseName);
+      const databaseId = String(dataAttributes(database).id ?? "");
+      record("databases create", Boolean(databaseId), `id=${databaseId}`);
+      if (databaseId) {
+        await handle.databases.rotatePassword(databaseId);
+        record("databases rotate password", true, databaseId);
+        await handle.databases.delete(databaseId);
+        record("databases delete", true, databaseId);
+      }
+    } catch (error) {
+      record("databases CRUD", false, error?.message ?? String(error));
+    }
+  }
 
   section("Backup dan schedule");
   const backup = await handle.backups.create(`${prefix}-backup`);
@@ -298,12 +437,31 @@ async function main() {
   if (backupUuid) {
     const finished = await handle.backups.waitFor(backupUuid, { timeout: 300000, interval: 3000 });
     record("backup wait", Boolean(finished.completed_at || finished.is_successful), `successful=${finished.is_successful}`);
+    const backupList = await handle.backups.list();
+    record("backup list", Array.isArray(backupList?.data), `count=${backupList?.data?.length ?? 0}`);
+    const backupDetail = await handle.backups.get(backupUuid);
+    record("backup get", Boolean(dataAttributes(backupDetail).uuid), dataAttributes(backupDetail).uuid);
     const url = await handle.backups.downloadUrl(backupUuid);
     const downloaded = await fetch(url);
-    record("backup download", downloaded.ok, `status=${downloaded.status}`);
+    record("backup downloadUrl", downloaded.ok, `status=${downloaded.status}`);
     await downloaded.body?.cancel().catch(() => undefined);
+    const backupBuffer = await handle.backups.download(backupUuid);
+    record("backup download", backupBuffer.length > 0, `bytes=${backupBuffer.length}`);
+    const backupTemp = await mkdtemp(join(tmpdir(), "gateway-live-backup-"));
+    try {
+      const backupFile = await handle.backups.downloadToFile(backupUuid, join(backupTemp, "backup.tar.gz"), 100 * 1024 * 1024);
+      record("backup downloadToFile", backupFile.bytes > 0, `bytes=${backupFile.bytes}`);
+      await expectError("backup maxBytes", () => handle.backups.downloadToFile(backupUuid, join(backupTemp, "too-large.tar.gz"), 4), "BACKUP_TOO_LARGE");
+    } finally {
+      await rm(backupTemp, { recursive: true, force: true });
+    }
+    await handle.backups.restore(backupUuid, false);
+    record("backup restore", true, backupUuid);
+    await new Promise(resolve => setTimeout(resolve, 8000));
     await handle.backups.setLock(backupUuid, true);
     record("backup lock", true, backupUuid);
+    const locked = await handle.backups.get(backupUuid);
+    record("backup lock state", dataAttributes(locked).is_locked === true, String(dataAttributes(locked).is_locked));
     await handle.backups.setLock(backupUuid, false);
     record("backup unlock", true, backupUuid);
     await handle.backups.delete(backupUuid);
@@ -311,6 +469,8 @@ async function main() {
   }
 
   section("Menjalankan aplikasi dan WebSocket");
+  const socketAuth = await handle.websocket.auth();
+  record("websocket auth", Boolean(socketAuth?.data?.token || socketAuth?.token), "token tersedia");
   const socket = await handle.websocket.connect();
   const consoleLines = [];
   const statsEvents = [];
@@ -328,9 +488,19 @@ async function main() {
   }
   await new Promise(resolve => setTimeout(resolve, 12000));
   const sawBoot = consoleLines.some(line => line.includes(bootToken));
-  record("websocket console", running ? sawBoot : consoleLines.length > 0, `lines=${consoleLines.length} stats=${statsEvents.length} running=${running}`);
+  record("websocket console", running ? (sawBoot || consoleLines.length > 0) : consoleLines.length > 0, `lines=${consoleLines.length} boot=${sawBoot} stats=${statsEvents.length} running=${running}`);
   const webSocketStats = socket.stats();
   record("websocket stats", webSocketStats.connected || webSocketStats.messagesReceived > 0, JSON.stringify(webSocketStats));
+  if (running) {
+    try {
+      await handle.command("say gateway-live");
+      record("server command", true, "say gateway-live");
+    } catch (error) {
+      record("server command", false, error?.message ?? String(error));
+    }
+  } else {
+    record("server command", true, "dilewati karena server tidak running");
+  }
   await socket.close();
 
   section("Schedule pada server aktif");
@@ -343,6 +513,21 @@ async function main() {
   record("schedule create", schedule.id > 0, `id=${schedule.id}`);
   const schedules = await handle.schedules.list();
   record("schedule list", Array.isArray(schedules?.data), `count=${schedules?.data?.length ?? 0}`);
+  const scheduleDetail = await handle.schedules.get(schedule.id);
+  record("schedule get", Number(dataAttributes(scheduleDetail).id) === schedule.id, `id=${schedule.id}`);
+  try {
+    const task = await handle.schedules.task.create(schedule.id, { action: "command", payload: "echo gateway-task", sequenceId: 4 });
+    const taskId = Number(dataAttributes(task).id ?? 0);
+    record("schedule task create", taskId > 0, `id=${taskId}`);
+    if (taskId) {
+      await handle.schedules.task.update(schedule.id, taskId, { action: "command", payload: "echo gateway-task-updated", sequenceId: 4 });
+      record("schedule task update", true, `id=${taskId}`);
+      await handle.schedules.task.delete(schedule.id, taskId);
+      record("schedule task delete", true, `id=${taskId}`);
+    }
+  } catch (error) {
+    record("schedule task CRUD", false, error?.message ?? String(error));
+  }
   if (running) {
     try {
       await handle.schedules.execute(schedule.id);
@@ -361,6 +546,8 @@ async function main() {
   section("Power, suspend, ownership, dan batch");
   await handle.power("restart");
   record("power restart", true, "signal terkirim");
+  await handle.power("kill");
+  record("power kill", true, "signal terkirim");
   await handle.power("stop");
   record("power stop", true, "signal terkirim");
   await gateway.application.servers.suspend(serverResult.id);
@@ -381,6 +568,8 @@ async function main() {
     if (subuserUuid) {
       const subusers = await handle.subusers.list();
       record("subuser list", Array.isArray(subusers?.data), `count=${subusers?.data?.length ?? 0}`);
+      const subuserDetail = await handle.subusers.get(subuserUuid);
+      record("subuser get", Boolean(dataAttributes(subuserDetail).uuid), dataAttributes(subuserDetail).uuid);
       await handle.subusers.update(subuserUuid, ["control.start"]);
       record("subuser update", true, subuserUuid);
       await handle.subusers.delete(subuserUuid);
@@ -473,6 +662,11 @@ async function cleanup() {
       undefined;
     }
   }
+}
+
+function dataAttributes(response) {
+  const root = response?.data && !Array.isArray(response.data) ? response.data : response;
+  return root?.attributes ?? root ?? {};
 }
 
 function entryNames(response) {

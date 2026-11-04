@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import {
   createPtero,
@@ -308,6 +311,105 @@ test("files.downloadUrl mengambil URL dari panel", async () => {
   const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
   const url = await ptero.server("abc123").files.downloadUrl("/folder/test.txt");
   assert.equal(url, "https://download.example.com/file");
+});
+
+test("files.upload memakai signed URL baru dari panel", async () => {
+  let signed = 0;
+  const fetcher = async url => {
+    assert.equal(new URL(String(url)).pathname.endsWith("/files/upload"), true);
+    signed += 1;
+    return json({ object: "signed_url", attributes: { url: `https://node.example.com/upload/signed-${signed}` } });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  const server = ptero.server("abc123");
+  const originalFetch = globalThis.fetch;
+  const captured = [];
+  globalThis.fetch = async (url, init) => {
+    captured.push({ url: String(url), init });
+    return new Response(null, { status: 204 });
+  };
+  try {
+    await server.files.upload("/", "hello.txt", "hello");
+    await server.files.upload("/", "hello.txt", "hello");
+    assert.equal(signed, 2);
+    assert.equal(captured.length, 2);
+    assert.equal(captured[0].url, "https://node.example.com/upload/signed-1");
+    assert.equal(captured[1].url, "https://node.example.com/upload/signed-2");
+    assert.equal(captured[0].init.method, "POST");
+    const file = captured[0].init.body.get("files");
+    assert.equal(file.name, "hello.txt");
+    assert.equal(await file.text(), "hello");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("schedules.task.update mempertahankan field wajib", async () => {
+  let posted = null;
+  const fetcher = async (url, init) => {
+    const target = new URL(String(url));
+    if (target.pathname.endsWith("/schedules/3/tasks/4")) {
+      posted = JSON.parse(String(init.body));
+      return new Response(null, { status: 204 });
+    }
+    if (target.pathname.endsWith("/schedules/3")) {
+      return json({ object: "schedule", attributes: { id: 3, relationships: { tasks: { data: [{ attributes: { id: 4, sequence_id: 7, action: "power", payload: "restart", time_offset: 30, continue_on_failure: true } }] } } } });
+    }
+    throw new Error(`unexpected path ${target.pathname}`);
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  await ptero.server("abc123").schedules.task.update(3, 4, { payload: "stop" });
+  assert.equal(posted.sequence_id, 7);
+  assert.equal(posted.action, "power");
+  assert.equal(posted.payload, "stop");
+  assert.equal(posted.time_offset, 30);
+  assert.equal(posted.continue_on_failure, true);
+});
+
+test("files.json membaca dan menulis JSON", async () => {
+  const log = [];
+  const fetcher = async (url, init) => {
+    log.push({ method: init?.method ?? "GET", path: new URL(String(url)).pathname, body: init?.body });
+    if (String(url).includes("broken.json")) return text("not-json");
+    if (String(url).includes("files/contents")) return text(JSON.stringify({ port: 3000 }));
+    return new Response(null, { status: 204 });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  const server = ptero.server("abc123");
+  await server.files.json.write("/config.json", { port: 3000 });
+  const config = await server.files.json.read("/config.json");
+  assert.deepEqual(config, { port: 3000 });
+  assert.equal(log[0].method, "POST");
+  assert.equal(JSON.parse(String(log[0].body)).port, 3000);
+  await assert.rejects(() => server.files.readJson("/broken.json"), error => error.code === "INVALID_JSON_FILE");
+});
+
+test("backups.download dan downloadToFile mengambil isi backup", async () => {
+  const payload = Buffer.from("backup-content");
+  const fetcher = async url => {
+    const target = new URL(String(url));
+    if (target.pathname.endsWith("/backups/backup-1/download")) {
+      return json({ attributes: { url: "https://download.example.com/backup" } });
+    }
+    return new Response(payload, { status: 200, headers: { "content-type": "application/octet-stream", "content-length": String(payload.length) } });
+  };
+  const ptero = createPtero({ domain: "https://panel.example.com", ptlc: "ptlc_test", fetcher });
+  const server = ptero.server("abc123");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(payload, { status: 200, headers: { "content-type": "application/octet-stream", "content-length": String(payload.length) } });
+  const directory = await mkdtemp(join(tmpdir(), "ptero-backup-test-"));
+  try {
+    const buffer = await server.backups.download("backup-1");
+    assert.deepEqual(buffer, payload);
+    const destination = join(directory, "backup.tar.gz");
+    const result = await server.backups.downloadToFile("backup-1", destination);
+    assert.equal(result.bytes, payload.length);
+    assert.deepEqual(await readFile(destination), payload);
+    await assert.rejects(() => server.backups.downloadToFile("backup-1", destination, 4), error => error.code === "BACKUP_TOO_LARGE");
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("getServerDetails menyatukan data node, egg, dan user", async () => {

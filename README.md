@@ -1,4 +1,4 @@
-# @akaanakbaik/pterodactyl-gateway v1.6.0-beta
+# @akaanakbaik/pterodactyl-gateway v1.6.0
 
 Gateway Pterodactyl profesional untuk JavaScript dan TypeScript. Satu paket berisi SDK Application API, Client API, Admin API, perencanaan kapasitas, WebSocket realtime, backup otomatis, email SMTP, dan CLI operasional.
 
@@ -186,6 +186,9 @@ const server = ptero.server("6e04fb6f");
 
 await server.resources();
 await server.files.write("/index.js", "console.log('hi')");
+await server.files.append("/index.js", "\nconsole.log('ready')");
+await server.files.writeJson("/config.json", { port: 3000 });
+const config = await server.files.readJson("/config.json");
 await server.files.copy("/index.js");
 await server.files.list("/");
 await server.files.uploadFromFile("/", "./dist/app.zip");
@@ -196,6 +199,8 @@ await server.waitForState("running", { timeout: 60000 });
 await server.command("npm start");
 
 const backup = await server.backups.createAndWait("harian");
+const archive = await server.backups.download(backup.uuid);
+await server.backups.downloadToFile(backup.uuid, "./backup.tar.gz", 512 * 1024 * 1024);
 await server.createScheduleBuilder()
   .setName("restart malam")
   .setCron("0 3 * * *")
@@ -331,7 +336,7 @@ Pterodactyl v1 tetap memakai `/api/application/nests` dan `/api/application/nest
 createPtero({ domain, ptla, ptlc, apiVersion: "v2" });
 ```
 
-Fitur Application API baru: CRUD location, create/update/delete node, server berdasarkan `external_id`, database server, dan tags. Fitur Client API baru: update email/password, SSH key, subuser, chmod/copy/pull file, restore/lock backup, dan ganti docker image.
+Fitur Application API baru: CRUD location, create/update/delete node, server berdasarkan `external_id`, database server, dan tags. Fitur Client API baru: update email/password, SSH key, subuser, chmod/copy/pull file, helper JSON, download file/backup, restore/lock backup, dan ganti docker image.
 
 ## Kompatibilitas panel
 
@@ -357,7 +362,7 @@ Jika panel meminta environment variable tertentu saat membuat server, gateway me
 Otomatis melalui GitHub Actions:
 
 1. Buka <https://github.com/akaanakbaik/pterodactyl-gateway/settings/secrets/actions> lalu tambahkan secret `NPM_TOKEN` berisi granular access token npm dengan izin publish pada package `@akaanakbaik/pterodactyl-gateway` dan opsi **Bypass 2FA** aktif. Token automation lama dapat ditolak dengan `E403 Two-factor authentication is required`.
-2. Buat tag versi: `git tag v1.6.0-beta && git push origin v1.6.0-beta`.
+2. Buat tag versi: `git tag v1.6.0 && git push origin v1.6.0`.
 3. Workflow `.github/workflows/publish.yml` menjalankan `npm ci`, seluruh quality gate, lalu `npm publish --provenance --access public`. Versi prerelease otomatis memakai dist-tag `next`, versi stabil memakai `latest`.
 4. Publikasi idempoten: jika versi sudah ada di npm, workflow melewati langkah publish dan tidak menggagalkan rilis.
 

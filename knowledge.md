@@ -3,7 +3,7 @@
 ## Identitas
 
 - Nama paket: `@akaanakbaik/pterodactyl-gateway`
-- Versi saat ini: `1.6.0-beta`
+- Versi saat ini: `1.6.0`
 - Lisensi: MIT
 - Repository: <https://github.com/akaanakbaik/pterodactyl-gateway>
 - Penulis: akaanakbaik

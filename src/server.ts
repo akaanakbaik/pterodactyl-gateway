@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { PteroError } from "./errors.js";
@@ -60,6 +60,10 @@ export class PteroServerHandle {
       write: (file: string, content: string | Buffer): Promise<unknown> =>
         this.gateway.request({ api: "client", method: "POST", path: `${base}/write`, query: { file }, body: content, contentType: "text" }),
       writeJson: (file: string, data: unknown, space = 2): Promise<unknown> => this.files.write(file, JSON.stringify(data, null, space)),
+      json: {
+        read: <T = unknown>(file: string): Promise<T> => this.files.readJson<T>(file),
+        write: (file: string, data: unknown, space = 2): Promise<unknown> => this.files.writeJson(file, data, space)
+      },
       append: async (file: string, content: string): Promise<unknown> => {
         let current = "";
         try {
@@ -90,7 +94,7 @@ export class PteroServerHandle {
       pull: (url: string, directory = "/", filename?: string): Promise<unknown> =>
         this.gateway.request({ api: "client", method: "POST", path: `${base}/pull`, body: { url, directory, filename } }),
       downloadUrl: async (file: string): Promise<string> => {
-        const response = await this.gateway.request<unknown>({ api: "client", path: `${base}/download`, query: { file } });
+        const response = await this.gateway.request<unknown>({ api: "client", path: `${base}/download`, query: { file }, cache: false });
         const attributes = getDataAttributes(response);
         const url = String(attributes.url ?? "");
         if (!url) throw new PteroError({ code: "DOWNLOAD_URL_MISSING", message: "Panel tidak mengembalikan URL download." });
@@ -127,22 +131,24 @@ export class PteroServerHandle {
           });
         }
         await pipeline(Readable.fromWeb(response.body as never), createWriteStream(destination));
-        const { stat } = await import("node:fs/promises");
         const info = await stat(destination);
         return { bytes: info.size, destination };
       },
       upload: async (root: string, filename: string, content: Buffer | string): Promise<unknown> => {
+        const response = await this.gateway.request<unknown>({ api: "client", path: `${base}/upload`, query: { directory: root }, cache: false });
+        const url = String(getDataAttributes(response).url ?? "");
+        if (!url) throw new PteroError({ code: "UPLOAD_URL_MISSING", message: "Panel tidak mengembalikan URL upload." });
         const form = new FormData();
         form.append("files", new Blob([content as unknown as BlobPart]), filename);
-        return this.gateway.request({
-          api: "client",
-          method: "POST",
-          path: `${base}/upload`,
-          query: { directory: root },
-          body: form,
-          contentType: "multipart",
-          retryUnsafe: false
-        });
+        const uploaded = await fetch(url, { method: "POST", body: form });
+        if (!uploaded.ok) {
+          throw new PteroError({
+            code: "UPLOAD_FAILED",
+            message: `Gagal mengupload file ke panel (HTTP ${uploaded.status}).`,
+            status: uploaded.status
+          });
+        }
+        return { object: "file_upload", attributes: { name: filename, url } };
       },
       uploadFromFile: async (root: string, localPath: string): Promise<unknown> => {
         const { basename } = await import("node:path");
@@ -173,11 +179,45 @@ export class PteroServerHandle {
       setLock: (backupId: string, locked: boolean) =>
         this.gateway.request<unknown>({ api: "client", method: "POST", path: `${base}/${backupId}/lock`, body: { is_locked: locked } }),
       downloadUrl: async (backupId: string): Promise<string> => {
-        const response = await this.gateway.request<unknown>({ api: "client", path: `${base}/${backupId}/download` });
+        const response = await this.gateway.request<unknown>({ api: "client", path: `${base}/${backupId}/download`, cache: false });
         const attributes = getDataAttributes(response);
         const url = String(attributes.url ?? "");
         if (!url) throw new PteroError({ code: "DOWNLOAD_URL_MISSING", message: "Panel tidak mengembalikan URL backup." });
         return url;
+      },
+      download: async (backupId: string): Promise<Buffer> => {
+        const url = await this.backups.downloadUrl(backupId);
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new PteroError({
+            code: "BACKUP_DOWNLOAD_FAILED",
+            message: `Gagal mengunduh backup (HTTP ${response.status}).`,
+            status: response.status
+          });
+        }
+        return Buffer.from(await response.arrayBuffer());
+      },
+      downloadToFile: async (backupId: string, destination: string, maxBytes?: number): Promise<{ bytes: number; destination: string }> => {
+        const url = await this.backups.downloadUrl(backupId);
+        const response = await fetch(url);
+        if (!response.ok || !response.body) {
+          throw new PteroError({
+            code: "BACKUP_DOWNLOAD_FAILED",
+            message: `Gagal mengunduh backup (HTTP ${response.status}).`,
+            status: response.status
+          });
+        }
+        const declared = Number(response.headers.get("content-length") ?? 0);
+        if (maxBytes && declared > maxBytes) {
+          throw new PteroError({
+            code: "BACKUP_TOO_LARGE",
+            message: `Backup melebihi batas ${maxBytes} byte.`,
+            hint: "Naikkan maxBytes atau unduh manual dari panel."
+          });
+        }
+        await pipeline(Readable.fromWeb(response.body as never), createWriteStream(destination));
+        const info = await stat(destination);
+        return { bytes: info.size, destination };
       },
       waitFor: async (backupId: string, options: WaitOptions = {}) => {
         const timeout = options.timeout ?? 600000;
@@ -277,19 +317,26 @@ export class PteroServerHandle {
               continue_on_failure: task.continueOnFailure ?? false
             }
           }),
-        update: (scheduleId: number, taskId: number, task: { action?: string; payload?: string; timeOffset?: number; continueOnFailure?: boolean; sequenceId?: number }) =>
-          this.gateway.request<unknown>({
+        update: async (scheduleId: number, taskId: number, task: { action?: string; payload?: string; timeOffset?: number; continueOnFailure?: boolean; sequenceId?: number }) => {
+          const id = assertScheduleId(scheduleId);
+          const existing = await this.gateway.request<unknown>({ api: "client", path: `${base}/${id}`, cache: false });
+          const relationships = asObject(getDataAttributes(existing).relationships);
+          const taskList = asObject(relationships.tasks);
+          const current = (Array.isArray(taskList.data) ? taskList.data : []).find(item => Number(getDataAttributes(item).id ?? 0) === taskId);
+          const attributes = getDataAttributes(current);
+          return this.gateway.request<unknown>({
             api: "client",
             method: "POST",
-            path: `${base}/${assertScheduleId(scheduleId)}/tasks/${taskId}`,
+            path: `${base}/${id}/tasks/${taskId}`,
             body: {
-              sequence_id: task.sequenceId,
-              action: task.action,
-              payload: task.payload,
-              time_offset: task.timeOffset,
-              continue_on_failure: task.continueOnFailure
+              sequence_id: task.sequenceId ?? Number(attributes.sequence_id ?? 1),
+              action: task.action ?? String(attributes.action ?? ""),
+              payload: task.payload ?? String(attributes.payload ?? ""),
+              time_offset: task.timeOffset ?? Number(attributes.time_offset ?? 0),
+              continue_on_failure: task.continueOnFailure ?? Boolean(attributes.continue_on_failure)
             }
-          }),
+          });
+        },
         delete: (scheduleId: number, taskId: number) =>
           this.gateway.request<unknown>({ api: "client", method: "DELETE", path: `${base}/${assertScheduleId(scheduleId)}/tasks/${taskId}` })
       }
@@ -362,7 +409,7 @@ export class PteroServerHandle {
 
   get websocket() {
     return {
-      auth: () => this.gateway.request<PteroWebSocketAuth>({ api: "client", path: `/servers/${this.identifier}/websocket` }),
+      auth: () => this.gateway.request<PteroWebSocketAuth>({ api: "client", path: `/servers/${this.identifier}/websocket`, cache: false }),
       create: (options?: ConstructorParameters<typeof PteroWebSocket>[2]) => new PteroWebSocket(this.gateway, this.identifier, options),
       connect: async (options?: ConstructorParameters<typeof PteroWebSocket>[2]) => {
         const socket = new PteroWebSocket(this.gateway, this.identifier, options);

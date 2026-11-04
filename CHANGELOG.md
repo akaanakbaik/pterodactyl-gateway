@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## 1.6.0-beta (2026-11-04)
+## 1.6.0 (2026-11-04)
 
 ### Pterodactyl v2
 - Deteksi otomatis Pterodactyl v1, v2, dan build canary lewat Admin API `/api/admin/version`, endpoint tags, dan endpoint nests.
@@ -19,11 +19,14 @@
 ### Fitur Client API
 - Update email dan password akun, daftar activity akun, serta SSH key.
 - Subuser server: list, get, create, update, dan delete.
-- File manager: chmod, copy, dan pull dari URL.
-- Backup: restore dan toggle lock.
+- File manager: chmod, copy, pull dari URL, append, tail, upload, download, download ke file, serta helper JSON `files.json.read` dan `files.json.write`.
+- Backup: download langsung ke Buffer, download ke file dengan batas `maxBytes`, restore, dan toggle lock.
 - Ganti docker image server.
 
 ### Perbaikan
+- `files.upload` memakai alur dua langkah Pterodactyl: GET signed URL lalu POST multipart ke Wings, bukan POST langsung ke endpoint panel.
+- Signed URL untuk upload, download, backup download, dan WebSocket auth tidak lagi diambil dari cache GET.
+- `schedules.task.update` mempertahankan `sequence_id`, `action`, `payload`, `time_offset`, dan `continue_on_failure` yang wajib diisi panel.
 - `files.copy` mengirim `location` sesuai kontrak Pterodactyl; panel membuat salinan di folder yang sama dengan suffix `copy`.
 - File manager menulis Buffer biner tanpa mengubah isinya menjadi string.
 - Environment wajib yang sudah diisi user tidak lagi memicu `EGG_VARIABLE_REQUIRED`.
@@ -32,7 +35,8 @@
 - Deteksi versi tidak lagi salah menganggap build `canary` sebagai v1.
 
 ### Kualitas dan CI
-- 52 runtime test dan 11 test kompatibilitas v1/v2, termasuk fitur client baru.
+- 56 runtime test dan 11 test kompatibilitas v1/v2, termasuk helper JSON, upload/download file, download backup, dan update task schedule.
+- Live test diperluas untuk helper JSON, upload/download file, download backup, activity, settings, network, dan subuser.
 - CI matrix Node 20/22/24, laporan coverage, package smoke test, dependency review, dan CodeQL.
 - Workflow live test manual dengan secret panel dan pembersihan artefak.
 - Workflow publish mendukung prerelease dengan dist-tag `next`, validasi tag, dan publikasi idempoten.
