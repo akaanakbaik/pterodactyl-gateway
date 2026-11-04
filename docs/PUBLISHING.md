@@ -102,6 +102,7 @@ node -e "console.log('cjs', require('@akaanakbaik/pterodactyl-gateway').VERSION)
 | --- | --- | --- |
 | `E401` / `ENEEDAUTH` | Token tidak valid | Perbarui secret `NPM_TOKEN` |
 | `E403` | Scope atau permission kurang | Pastikan token memiliki akses publish ke scope `@akaanakbaik` |
+| `E403 Two-factor authentication is required` | Token automation tidak boleh publish karena paket mewajibkan 2FA | Buat granular token dengan **Bypass 2FA**, perbarui secret `NPM_TOKEN`, atau aktifkan Trusted Publishing |
 | `EPUBLISHCONFLICT` | Versi sudah ada | Naikkan versi dengan `npm version patch` |
 | `release guard gagal` | Versi tidak sinkron | Samakan versi di semua file lalu jalankan `npm run verify` |
 | `provenance` gagal | Workflow tidak berjalan di GitHub Actions | Publikasikan melalui workflow, bukan lokal |
