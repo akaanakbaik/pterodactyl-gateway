@@ -9,7 +9,7 @@ test("CJS entry mengekspor API utama", () => {
   assert.equal(typeof gatewayPackage.PteroGateway, "function");
   assert.equal(typeof gatewayPackage.planPlacement, "function");
   assert.equal(typeof gatewayPackage.sendEmailMessage, "function");
-  assert.match(gatewayPackage.VERSION, /^\d+\.\d+\.\d+$/);
+  assert.match(gatewayPackage.VERSION, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
 });
 
 test("CJS gateway menjalankan request dengan mock fetcher", async () => {
@@ -24,7 +24,7 @@ test("CJS gateway menjalankan request dengan mock fetcher", async () => {
   const gateway = gatewayPackage.createPtero({ domain: "https://panel.example.com", ptla: "ptla_test", fetcher });
   const eggs = await gateway.listEggs();
   assert.equal(eggs.length, 1);
-  assert.ok(calls.some(call => /api\/application\/eggs/.test(call.url)));
+  assert.ok(calls.some(call => /api\/application\/(eggs|nests)/.test(call.url)));
 });
 
 test("declaration CJS tersedia untuk konsumen require", () => {

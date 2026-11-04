@@ -3,7 +3,7 @@
 ## Identitas
 
 - Nama paket: `@akaanakbaik/pterodactyl-gateway`
-- Versi saat ini: `1.5.0`
+- Versi saat ini: `1.6.0-beta`
 - Lisensi: MIT
 - Repository: <https://github.com/akaanakbaik/pterodactyl-gateway>
 - Penulis: akaanakbaik
@@ -15,6 +15,8 @@
 | `npm run build` | Build ESM, CJS, deklarasi, dan tipe `.d.cts` |
 | `npm run typecheck` | Typecheck ketat tanpa emit |
 | `npm test` | Build lalu menjalankan seluruh unit test |
+| `npm run test:compat` | Suite kompatibilitas Pterodactyl v1 dan v2 |
+| `npm run test:coverage` | Unit test dengan laporan coverage |
 | `npm run test:types` | Verifikasi konsumsi tipe ESM dan CJS |
 | `npm run test:live` | Live test terhadap panel asli |
 | `npm run verify` | Quality gate lengkap sebelum rilis |
@@ -36,11 +38,13 @@
 
 ## Catatan panel live
 
-Panel uji `https://panel.akaa.dev` adalah varian Pterodactyl:
+Panel uji `https://panel.akaa.dev` menjalankan Pterodactyl v2 open beta (build canary):
 
-- Endpoint `/api/application/nests` tidak tersedia (404).
-- Endpoint `/api/application/eggs` dan `/api/application/eggs/{id}?include=variables` tersedia.
-- Payload pembuatan server memakai field `nest` dan `egg`.
+- `GET /api/admin/version` tersedia dengan Client API key root administrator, `current` bernilai `canary`.
+- `GET /api/application/tags` tersedia dan menggantikan nest.
+- `GET /api/application/nests` tidak tersedia (404).
+- `GET /api/application/eggs` dan `/api/application/eggs/{id}?include=variables,tags` tersedia.
+- Payload pembuatan server v2 tidak memakai field `nest`.
 - Entri direktori file dibungkus dalam `attributes`.
 - Respons `/api/client/servers/{id}/resources` dibungkus `attributes`.
 - Status server baru tetap `starting` sampai Wings menemukan string `config.startup.done` pada console.
@@ -49,7 +53,7 @@ Semua perbedaan ini ditangani otomatis oleh gateway.
 
 ## Pembersihan artefak uji
 
-`scripts/live-test.mjs` menghapus server dan user yang dibuat melalui blok `finally`. Untuk pembersihan manual:
+`scripts/live-test.mjs` menghapus server dan user yang dibuat melalui blok `finally` ketika dijalankan dengan `--mutate`. Untuk pembersihan manual:
 
 ```bash
 ptero-gateway servers

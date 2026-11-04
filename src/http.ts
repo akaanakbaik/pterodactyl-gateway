@@ -19,6 +19,7 @@ export type HttpCoreConfig = {
   domain: string;
   applicationKey?: string;
   clientKey?: string;
+  adminKey?: string;
   timeout: number;
   userAgent: string;
   fetcher: typeof fetch;
@@ -78,12 +79,12 @@ export class HttpCore {
 
   async request<T = unknown>(options: RequestOptions): Promise<T> {
     const api = options.api;
-    const key = api === "application" ? this.config.applicationKey : this.config.clientKey;
+    const key = api === "application" ? this.config.applicationKey : api === "client" ? this.config.clientKey : this.config.adminKey ?? this.config.clientKey;
     if (!key) {
       const error = new PteroError({
-        code: api === "application" ? "PTLA_REQUIRED" : "PTLC_REQUIRED",
-        message: `API key ${api === "application" ? "PTLA" : "PTLC"} belum diisi.`,
-        hint: `Aksi ini membutuhkan ${api === "application" ? "Application" : "Client"} API.`,
+        code: api === "application" ? "PTLA_REQUIRED" : api === "client" ? "PTLC_REQUIRED" : "ADMIN_KEY_REQUIRED",
+        message: `API key ${api === "application" ? "PTLA" : api === "client" ? "PTLC" : "admin"} belum diisi.`,
+        hint: `Aksi ini membutuhkan ${api === "application" ? "Application" : api === "client" ? "Client" : "Admin"} API.`,
         steps: ["Isi key saat membuat gateway", "Atau set environment variable yang sesuai", "Jalankan doctor untuk validasi"]
       });
       this.logger.error(error.message);
@@ -92,7 +93,7 @@ export class HttpCore {
 
     const method = (options.method ?? "GET").toUpperCase() as HttpMethod;
     const path = appendQuery(options.path.startsWith("/") ? options.path : `/${options.path}`, options.query);
-    const url = `${this.config.domain}${api === "application" ? "/api/application" : "/api/client"}${path}`;
+    const url = `${this.config.domain}${api === "application" ? "/api/application" : api === "client" ? "/api/client" : "/api/admin"}${path}`;
     const cacheable = method === "GET" && this.cache !== null && options.cache !== false;
     const cacheKey = `${api}:${url}`;
     const ttl = typeof options.cache === "number" ? options.cache : undefined;
@@ -371,8 +372,14 @@ function parseRetryAfter(value: string | null): number | undefined {
 function buildBody(body: unknown, contentType: "json" | "text" | "multipart"): BodyInit | undefined {
   if (body === undefined || body === null) return undefined;
   if (contentType === "multipart") return body as BodyInit;
-  if (contentType === "text") return String(body);
   if (typeof body === "string") return body;
+  if (typeof Blob !== "undefined" && body instanceof Blob) return body;
+  if (typeof FormData !== "undefined" && body instanceof FormData) return body;
+  if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) return body;
+  if (typeof ArrayBuffer !== "undefined" && (body instanceof ArrayBuffer || ArrayBuffer.isView(body))) {
+    return body as BodyInit;
+  }
+  if (contentType === "text") return String(body);
   return JSON.stringify(body);
 }
 
@@ -415,7 +422,11 @@ function normalizeStatusCode(status: number): string {
 
 function buildStatusHint(status: number, api: ApiScope): string | undefined {
   if (status === 401 || status === 403) {
-    return api === "application" ? "Periksa PTLA dan permission Application API." : "Periksa PTLC dan permission Client API.";
+    return api === "application"
+      ? "Periksa PTLA dan permission Application API."
+      : api === "client"
+        ? "Periksa PTLC dan permission Client API."
+        : "Admin API membutuhkan Client API key milik root administrator.";
   }
   if (status === 404) return "Periksa ID, endpoint, dan versi panel. Beberapa panel tidak menyediakan endpoint tertentu.";
   if (status === 409) return "Resource sedang dipakai atau statusnya tidak memungkinkan operasi ini.";

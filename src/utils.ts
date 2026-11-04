@@ -36,8 +36,12 @@ export function toBoolean(value: BooleanLike | undefined | null): boolean {
 }
 
 export function parseSizeToMiB(value: SizeInput): number {
-  if (typeof value === "number") return ensureNonNegativeInteger(value, "size");
+  if (typeof value === "number") {
+    if (value === -1) return -1;
+    return ensureNonNegativeInteger(value, "size");
+  }
   const normalized = value.trim().toLowerCase();
+  if (normalized === "-1") return -1;
   if (["unlimited", "unlimitedspace", "inf", "infinity"].includes(normalized)) return 0;
   const match = normalized.match(/^(\d+(?:[.,]\d+)?)\s*(b|kb|kib|mb|mib|gb|gib|tb|tib)?$/);
   if (!match) throw new Error(`Ukuran tidak valid: ${value}`);

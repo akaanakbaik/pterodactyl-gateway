@@ -1,7 +1,8 @@
-# @akaanakbaik/pterodactyl-gateway v1.5.0
+# @akaanakbaik/pterodactyl-gateway v1.6.0-beta
 
-Gateway Pterodactyl profesional untuk JavaScript dan TypeScript. Satu paket berisi SDK Application API, Client API, perencanaan kapasitas, WebSocket realtime, backup otomatis, email SMTP, dan CLI operasional.
+Gateway Pterodactyl profesional untuk JavaScript dan TypeScript. Satu paket berisi SDK Application API, Client API, Admin API, perencanaan kapasitas, WebSocket realtime, backup otomatis, email SMTP, dan CLI operasional.
 
+- Dukungan penuh **Pterodactyl v1 dan Pterodactyl v2** dengan deteksi otomatis
 - Dukungan penuh **TypeScript**, **JavaScript**, **ESM**, dan **CommonJS**
 - Retry adaptif, rate limiter, circuit breaker, cache GET, dan metrik latensi
 - Perencanaan penempatan server berbasis matematika kapasitas node
@@ -22,6 +23,7 @@ Versi ini diuji langsung terhadap panel produksi `https://panel.akaa.dev` termas
 - [WebSocket](#websocket)
 - [CLI](#cli)
 - [Konfigurasi](#konfigurasi)
+- [Dukungan Pterodactyl v1 dan v2](#dukungan-pterodactyl-v1-dan-v2)
 - [Kompatibilitas panel](#kompatibilitas-panel)
 - [Keamanan](#keamanan)
 - [Publish ke npm](#publish-ke-npm)
@@ -43,7 +45,10 @@ Buat Application API key (PTLA) dan Client API key (PTLC) dari panel, lalu simpa
 export PTERO_DOMAIN="https://panel.example.com"
 export PTERO_PTLA="ptla_xxxxxxxxxxxxxxxxx"
 export PTERO_PTLC="ptlc_xxxxxxxxxxxxxxxxx"
+export PTERO_ADMIN_KEY="ptlc_xxxxxxxxxxxxxxxxx"
 ```
+
+`PTERO_ADMIN_KEY` hanya dibutuhkan Pterodactyl v2 untuk Admin API, dan harus berupa Client API key milik root administrator. Jika kosong, gateway memakai `PTERO_PTLC`.
 
 Cek koneksi:
 
@@ -99,6 +104,8 @@ const ptero = createPtero({
   domain: "https://panel.example.com",
   ptla: "ptla_xxx",
   ptlc: "ptlc_xxx",
+  adminKey: "ptlc_xxx",
+  apiVersion: "auto",
   timeout: 20000,
   safeMode: true,
   retry: { retries: 3, baseDelay: 400, maxDelay: 10000, retryOn: [429, 502, 503, 504], retryOnNetwork: true },
@@ -179,6 +186,7 @@ const server = ptero.server("6e04fb6f");
 
 await server.resources();
 await server.files.write("/index.js", "console.log('hi')");
+await server.files.copy("/index.js");
 await server.files.list("/");
 await server.files.uploadFromFile("/", "./dist/app.zip");
 await server.files.downloadToFile("/app.zip", "./app.zip");
@@ -287,17 +295,50 @@ Environment yang didukung:
 | `PTERO_DOMAIN` | URL panel |
 | `PTERO_PTLA` | Application API key |
 | `PTERO_PTLC` | Client API key |
+| `PTERO_ADMIN_KEY` | Client API key root administrator untuk Admin API v2 |
+| `PTERO_API_VERSION` | `auto`, `v1`, atau `v2` jika deteksi otomatis perlu dipaksa |
 | `PTERO_NODE_ID` | Node default |
 | `PTERO_NEST_ID` | Nest default |
 | `PTERO_EGG_ID` | Egg default |
 | `PTERO_SAFE_MODE` | `false` untuk mematikan guard penghapusan |
 | `SMTP_*` | Konfigurasi email |
 
+## Dukungan Pterodactyl v1 dan v2
+
+Gateway mendeteksi versi panel dan menyesuaikan endpoint, payload, serta pembacaan egg. Hasil deteksi tersedia lewat `panel()` dan `capabilities()`.
+
+```ts
+const panel = await ptero.panel();
+console.log(panel.apiVersion, panel.panelVersion, panel.adminApi, panel.tags);
+```
+
+Pterodactyl v2 mengganti nest dengan tag dan menambahkan Admin API. Gateway otomatis memakai `/api/application/eggs`, `/api/application/tags`, dan `/api/admin/*` ketika panel melaporkan v2. Payload pembuatan server tidak lagi mengirim `nest`, dan detail server membaca nama tag dari egg.
+
+```ts
+const tags = await ptero.listTags();
+const tag = await ptero.findTagByName("Minecraft");
+const eggs = await ptero.application.eggs.list();
+
+const admin = ptero.admin;
+console.log(await admin.version());
+console.log(await admin.eggs.all());
+await admin.tags.create({ name: "Rust", slug: "rust", color: "#c4553b" });
+```
+
+Pterodactyl v1 tetap memakai `/api/application/nests` dan `/api/application/nests/{id}/eggs`. Paksa mode tertentu bila panel memakai fork dengan endpoint tidak standar:
+
+```ts
+createPtero({ domain, ptla, ptlc, apiVersion: "v2" });
+```
+
+Fitur Application API baru: CRUD location, create/update/delete node, server berdasarkan `external_id`, database server, dan tags. Fitur Client API baru: update email/password, SSH key, subuser, chmod/copy/pull file, restore/lock backup, dan ganti docker image.
+
 ## Kompatibilitas panel
 
 Gateway mendeteksi kemampuan panel secara otomatis:
 
-- Panel standar dengan endpoint `/nests` dan `/nests/{id}/eggs`
+- Pterodactyl v1: `/nests`, `/nests/{id}/eggs`, Application API, dan Client API
+- Pterodactyl v2: `/eggs`, `/tags`, Admin API, Application API, dan Client API
 - Panel varian dengan endpoint `/eggs` dan `/eggs/{id}?include=variables`
 - Panel tanpa kedua endpoint akan menghasilkan error `UNSUPPORTED_PANEL_FEATURE` yang jelas
 
@@ -316,8 +357,9 @@ Jika panel meminta environment variable tertentu saat membuat server, gateway me
 Otomatis melalui GitHub Actions:
 
 1. Buka <https://github.com/akaanakbaik/pterodactyl-gateway/settings/secrets/actions> lalu tambahkan secret `NPM_TOKEN` berisi granular access token npm dengan izin publish pada package `@akaanakbaik/pterodactyl-gateway`.
-2. Buat tag versi: `git tag v1.5.0 && git push origin v1.5.0`.
-3. Workflow `.github/workflows/publish.yml` menjalankan `npm ci`, seluruh quality gate, `npm publish --provenance --access public`, lalu membuat GitHub Release.
+2. Buat tag versi: `git tag v1.6.0-beta && git push origin v1.6.0-beta`.
+3. Workflow `.github/workflows/publish.yml` menjalankan `npm ci`, seluruh quality gate, lalu `npm publish --provenance --access public`. Versi prerelease otomatis memakai dist-tag `next`, versi stabil memakai `latest`.
+4. Publikasi idempoten: jika versi sudah ada di npm, workflow melewati langkah publish dan tidak menggagalkan rilis.
 
 Alternatif tanpa token adalah Trusted Publishing: daftarkan repository dan workflow `publish.yml` pada halaman package di npmjs.com, lalu hapus secret `NPM_TOKEN`. Workflow sudah memakai `id-token: write` sehingga provenance dan autentikasi OIDC bekerja otomatis.
 
@@ -348,6 +390,8 @@ Panduan lengkap ada di [docs/PUBLISHING.md](docs/PUBLISHING.md).
 | `CONFLICT` saat operasi file | Server belum selesai instalasi | Gunakan `waitForInstall` |
 | `VALIDATION_ERROR` soal environment | Egg tidak mengekspos variable | Isi `environment` manual atau biarkan gateway melengkapi otomatis |
 | `UNSUPPORTED_PANEL_FEATURE` | Endpoint tidak tersedia | Gunakan `ptero-gateway doctor` untuk melihat kemampuan panel |
+| `ADMIN_KEY_REQUIRED` | Admin API v2 dipanggil tanpa key root | Isi `adminKey` atau `PTERO_ADMIN_KEY` |
+| `TAG_NOT_FOUND` | Nama tag v2 salah | Jalankan `ptero-gateway` tags atau `ptero.listTags()` |
 
 Jalankan `ptero-gateway explain <KODE_ERROR>` untuk penjelasan detail dan langkah perbaikan.
 

@@ -1,0 +1,70 @@
+name: Live Panel Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      mutate:
+        description: Buat lalu hapus user dan server nyata
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-panel-test
+  cancel-in-progress: false
+
+env:
+  CI: true
+  NPM_CONFIG_FUND: false
+  NPM_CONFIG_AUDIT: false
+  PTERO_DOMAIN: ${{ secrets.PTERO_DOMAIN }}
+  PTERO_PTLA: ${{ secrets.PTERO_PTLA }}
+  PTERO_PTLC: ${{ secrets.PTERO_PTLC }}
+  PTERO_ADMIN_KEY: ${{ secrets.PTERO_ADMIN_KEY }}
+  PTERO_NEST_ID: ${{ secrets.PTERO_NEST_ID }}
+  PTERO_EGG_ID: ${{ secrets.PTERO_EGG_ID }}
+
+jobs:
+  live:
+    name: Live integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify credentials are configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in PTERO_DOMAIN PTERO_PTLA PTERO_PTLC; do
+            if [ -z "${!name:-}" ]; then
+              echo "Secret $name belum diisi."
+              exit 1
+            fi
+          done
+
+      - name: Build package
+        run: npm run build
+
+      - name: Run live test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.mutate }}" = "true" ]; then
+            node scripts/live-test.mjs --mutate
+          else
+            node scripts/live-test.mjs
+          fi

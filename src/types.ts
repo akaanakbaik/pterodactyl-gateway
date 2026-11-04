@@ -10,7 +10,9 @@ export type ServerPowerSignal = "start" | "stop" | "restart" | "kill";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 
-export type ApiScope = "application" | "client";
+export type ApiScope = "application" | "client" | "admin";
+
+export type PanelApiVersion = "v1" | "v2" | "unknown";
 
 export type QueryValue = string | number | boolean | null | undefined;
 
@@ -80,6 +82,8 @@ export type PteroConfig = {
   ptlc?: string;
   applicationKey?: string;
   clientKey?: string;
+  adminKey?: string;
+  apiVersion?: "auto" | "v1" | "v2";
   timeout?: number;
   userAgent?: string;
   safeMode?: boolean;
@@ -104,6 +108,9 @@ export type ConnectResult = {
   latency: number;
   application: KeyCheckResult;
   client: KeyCheckResult;
+  admin: KeyCheckResult;
+  apiVersion: PanelApiVersion;
+  panelVersion?: string;
 };
 
 export type KeyCheckResult = {
@@ -124,6 +131,31 @@ export type PanelCapabilities = {
   eggs: boolean;
   applicationApi: boolean;
   clientApi: boolean;
+  adminApi: boolean;
+  tags: boolean;
+  apiVersion: PanelApiVersion;
+  panelVersion?: string;
+};
+
+export type PteroTag = {
+  id: number;
+  name: string;
+  slug: string;
+  color?: string;
+  isPredefined?: boolean;
+  legacyNestId?: number;
+  raw?: unknown;
+};
+
+export type PanelInfo = {
+  apiVersion: PanelApiVersion;
+  panelVersion?: string;
+  latestVersion?: string;
+  daemonVersion?: string;
+  adminApi: boolean;
+  nests: boolean;
+  tags: boolean;
+  detectedAt: string;
 };
 
 export type DoctorReport = {
@@ -387,6 +419,29 @@ export type WaitOptions = {
   interval?: number;
   signal?: AbortSignal;
   onPoll?: (snapshot: unknown) => void;
+};
+
+export type ServerDatabase = {
+  id: string;
+  name: string;
+  username: string;
+  host?: { address: string; port: number };
+  connections_from?: string;
+  max_connections?: number;
+  password?: string;
+  raw?: unknown;
+};
+
+export type ServerTransferInput = {
+  nodeId: number;
+  allocationId?: number;
+  allocationAdditional?: number[];
+};
+
+export type EggImportInput = {
+  name?: string;
+  tags?: number[];
+  file?: unknown;
 };
 
 export type PteroAppUser = {
@@ -659,4 +714,29 @@ export type FileEntry = {
 export type FileListResult = {
   object?: string;
   data: FileEntry[];
+};
+
+export type ServerSubuser = {
+  uuid: string;
+  username: string;
+  email: string;
+  image?: string;
+  "2fa": boolean;
+  created_at?: string;
+  permissions: string[];
+};
+
+export type SshKey = {
+  name: string;
+  fingerprint: string;
+  public_key?: string;
+  created_at?: string;
+};
+
+export type AccountUpdateInput = {
+  email?: string;
+  password?: string;
+  currentPassword?: string;
+  firstName?: string;
+  lastName?: string;
 };

@@ -69,7 +69,7 @@ test("explainError menghasilkan pesan tutorial", () => {
 });
 
 test("versi package diekspor", () => {
-  assert.match(VERSION, /^\d+\.\d+\.\d+$/);
+  assert.match(VERSION, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
 });
 
 test("connect mendeteksi mode full dengan mock fetch", async () => {

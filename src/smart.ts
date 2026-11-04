@@ -119,6 +119,7 @@ export function buildEnvironment(rawEgg: unknown, input: CreateSmartServerInput)
   const variables = getCollection(relationships.variables);
   const output: Record<string, string> = {};
   const useEggDefaults = input.autoFillEnvironment !== false;
+  const provided = input.environment && input.environment !== "auto" ? input.environment : {};
 
   if (useEggDefaults) {
     for (const variable of variables) {
@@ -127,7 +128,8 @@ export function buildEnvironment(rawEgg: unknown, input: CreateSmartServerInput)
       if (!env) continue;
       const defaultValue = variableAttributes.default_value;
       const rules = String(variableAttributes.rules ?? "");
-      if (defaultValue !== undefined && defaultValue !== null) output[env] = String(defaultValue);
+      if (provided[env] !== undefined) output[env] = String(provided[env]);
+      else if (defaultValue !== undefined && defaultValue !== null) output[env] = String(defaultValue);
       else if (rules.includes("required")) {
         throw new PteroError({
           code: "EGG_VARIABLE_REQUIRED",
@@ -139,9 +141,7 @@ export function buildEnvironment(rawEgg: unknown, input: CreateSmartServerInput)
     }
   }
 
-  if (input.environment && input.environment !== "auto") {
-    for (const [key, value] of Object.entries(input.environment)) output[key] = String(value);
-  }
+  for (const [key, value] of Object.entries(provided)) output[key] = String(value);
 
   return output;
 }
@@ -180,6 +180,7 @@ export function buildServerPayload(
     rawEgg: unknown;
     allocation: { default: number; additional: number[] };
     specs: ReturnType<typeof normalizeSpecs>;
+    apiVersion?: "v1" | "v2" | "unknown";
   }
 ): Record<string, unknown> {
   const name = ensureNonEmptyString(input.name, "name");
@@ -192,7 +193,7 @@ export function buildServerPayload(
     name,
     user: resolved.userId,
     description,
-    nest: nestId,
+    ...(resolved.apiVersion === "v2" ? {} : { nest: nestId }),
     egg: input.eggId,
     docker_image: resolveDockerImage(resolved.rawEgg, input.dockerImage),
     startup: resolveStartup(resolved.rawEgg, input.startup),

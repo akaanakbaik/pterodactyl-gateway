@@ -9,7 +9,7 @@ on:
       dry-run:
         description: Jalankan tanpa mempublikasikan
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write
@@ -44,22 +44,64 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME tidak cocok dengan package.json versi $PACKAGE_VERSION."
+            exit 1
+          fi
+
+      - name: Resolve npm dist-tag and release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          case "$VERSION" in
+            *-*) DIST_TAG="next" ;;
+            *) DIST_TAG="latest" ;;
+          esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$([[ "$VERSION" == *-* ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Check existing npm version
+        id: registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          if npm view "@akaanakbaik/pterodactyl-gateway@${{ steps.meta.outputs.version }}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Verify package
         run: npm run verify
 
       - name: Publish dry run
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
-        run: npm publish --dry-run --access public
+        if: github.event_name == 'workflow_dispatch' && inputs.dry-run
+        run: npm publish --dry-run --access public --tag ${{ steps.meta.outputs.tag }}
 
       - name: Publish to npm
-        if: ${{ github.event_name == 'push' || !inputs.dry-run }}
+        if: (github.event_name == 'push' || !inputs.dry-run) && steps.registry.outputs.exists == 'false'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --tag ${{ steps.meta.outputs.tag }}
+
+      - name: Skip already published version
+        if: steps.registry.outputs.exists == 'true'
+        run: echo "Versi ${{ steps.meta.outputs.version }} sudah ada di npm; publikasi dilewati."
 
       - name: Create GitHub release
-        if: ${{ github.event_name == 'push' }}
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           draft: false
+          prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}

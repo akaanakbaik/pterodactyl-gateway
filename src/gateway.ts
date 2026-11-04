@@ -42,12 +42,16 @@ import {
   CreateSmartServerInput,
   CreateUserSmartInput,
   DoctorReport,
+  EggImportInput,
   GatewayMetrics,
   NodeCapacity,
   NormalizedServer,
   NormalizedUser,
   OperationOptions,
+  PanelApiVersion,
   PanelCapabilities,
+  PanelInfo,
+  PteroTag,
   PlacementPlan,
   PlacementStrategy,
   PteroConfig,
@@ -70,6 +74,7 @@ import {
   parseCpu,
   parseSizeToMiB,
   sleep,
+  slugify,
   toBoolean,
   validateEmail
 } from "./utils.js";
@@ -83,6 +88,7 @@ export class PteroGateway {
   readonly domain: string;
   readonly applicationKey?: string;
   readonly clientKey?: string;
+  readonly adminKey?: string;
   readonly timeout: number;
   readonly userAgent: string;
   readonly safeMode: boolean;
@@ -91,6 +97,8 @@ export class PteroGateway {
   readonly version = VERSION;
   private readonly http: HttpCore;
   private capabilitiesCache?: PanelCapabilities;
+  private profileCache?: PanelInfo;
+  private readonly apiVersionPreference: "auto" | "v1" | "v2";
   private readonly defaultNodeId?: number;
   private readonly defaultNestId: number;
   private readonly defaultEggId: number;
@@ -102,6 +110,8 @@ export class PteroGateway {
     this.domain = normalizeDomain(domain);
     this.applicationKey = config.ptla ?? config.applicationKey;
     this.clientKey = config.ptlc ?? config.clientKey;
+    this.adminKey = config.adminKey ?? config.ptlc ?? config.clientKey;
+    this.apiVersionPreference = config.apiVersion ?? "auto";
     this.timeout = Math.max(1000, config.timeout ?? 20000);
     this.userAgent = config.userAgent ?? USER_AGENT;
     this.safeMode = config.safeMode ?? true;
@@ -125,6 +135,7 @@ export class PteroGateway {
       domain: this.domain,
       applicationKey: this.applicationKey,
       clientKey: this.clientKey,
+      adminKey: this.adminKey,
       timeout: this.timeout,
       userAgent: this.userAgent,
       fetcher: config.fetcher ?? fetch,
@@ -142,9 +153,11 @@ export class PteroGateway {
       domain: env.PTERO_DOMAIN ?? env.PTERO_PANEL_URL,
       ptla: env.PTERO_PTLA ?? env.PTERO_APPLICATION_KEY,
       ptlc: env.PTERO_PTLC ?? env.PTERO_CLIENT_KEY,
+      adminKey: env.PTERO_ADMIN_KEY,
       defaultNodeId: env.PTERO_NODE_ID ? Number(env.PTERO_NODE_ID) : undefined,
       defaultNestId: env.PTERO_NEST_ID ? Number(env.PTERO_NEST_ID) : undefined,
       defaultEggId: env.PTERO_EGG_ID ? Number(env.PTERO_EGG_ID) : undefined,
+      apiVersion: env.PTERO_API_VERSION === "v1" || env.PTERO_API_VERSION === "v2" ? env.PTERO_API_VERSION : undefined,
       safeMode: env.PTERO_SAFE_MODE === undefined ? true : env.PTERO_SAFE_MODE !== "false",
       debug: env.PTERO_DEBUG === "true"
     });
@@ -162,12 +175,22 @@ export class PteroGateway {
         delete: (id: number, confirm?: boolean) => this.deleteApplicationUser(id, confirm ?? false),
         find: (email: string) => this.findUserByEmail(email),
         findById: (id: number) => this.application.users.get(id),
-        all: () => this.listAllPages<unknown>(page => this.application.users.list(page))
+        byExternalId: (externalId: string) =>
+          this.request<unknown>({ api: "application", path: `/users/external/${encodeURIComponent(externalId)}`, cache: false }),
+        all: (filters?: Record<string, string>) => this.listAllPages<unknown>(page => this.application.users.list(page, filters))
       },
       nodes: {
-        list: (page = 1) => this.request<unknown>({ api: "application", path: "/nodes", query: { page } }),
+        list: (page = 1, filters?: Record<string, string>) =>
+          this.request<unknown>({ api: "application", path: "/nodes", query: { page, ...filters } }),
         get: (id: number) => this.request<unknown>({ api: "application", path: `/nodes/${ensurePositiveInteger(id, "nodeId")}` }),
         config: (id: number) => this.request<unknown>({ api: "application", path: `/nodes/${ensurePositiveInteger(id, "nodeId")}/configuration` }),
+        create: (data: Record<string, unknown>) => this.request<unknown>({ api: "application", method: "POST", path: "/nodes", body: data }),
+        update: (id: number, data: Record<string, unknown>) =>
+          this.request<unknown>({ api: "application", method: "PATCH", path: `/nodes/${ensurePositiveInteger(id, "nodeId")}`, body: data }),
+        delete: (id: number, confirm?: boolean) => {
+          this.ensureDestructiveOperation(`menghapus node ${id}`, confirm ?? false);
+          return this.request<unknown>({ api: "application", method: "DELETE", path: `/nodes/${ensurePositiveInteger(id, "nodeId")}` });
+        },
         all: () => this.listAllPages<unknown>(page => this.application.nodes.list(page)),
         allocations: {
           list: (nodeId: number, page = 1) =>
@@ -199,12 +222,41 @@ export class PteroGateway {
         delete: (id: number, confirmOrOptions?: boolean | { confirm?: boolean; force?: boolean }) =>
           this.deleteApplicationServer(id, confirmOrOptions),
         all: (filters?: Record<string, string>) => this.listAllPages<unknown>(page => this.application.servers.list(page, filters)),
-        findByUser: (userId: number) => this.findServersByUser(userId)
+        findByUser: (userId: number) => this.findServersByUser(userId),
+        byExternalId: (externalId: string) =>
+          this.request<unknown>({ api: "application", path: `/servers/external/${encodeURIComponent(externalId)}`, cache: false }),
+        databases: {
+          list: (serverId: number) =>
+            this.request<unknown>({ api: "application", path: `/servers/${ensurePositiveInteger(serverId, "serverId")}/databases` }),
+          get: (serverId: number, databaseId: number) =>
+            this.request<unknown>({ api: "application", path: `/servers/${ensurePositiveInteger(serverId, "serverId")}/databases/${ensurePositiveInteger(databaseId, "databaseId")}` }),
+          create: (serverId: number, data: { database: string; remote?: string; host?: number }) =>
+            this.request<unknown>({ api: "application", method: "POST", path: `/servers/${ensurePositiveInteger(serverId, "serverId")}/databases`, body: data }),
+          resetPassword: (serverId: number, databaseId: number) =>
+            this.request<unknown>({ api: "application", method: "POST", path: `/servers/${ensurePositiveInteger(serverId, "serverId")}/databases/${ensurePositiveInteger(databaseId, "databaseId")}/reset-password` }),
+          delete: (serverId: number, databaseId: number, confirm?: boolean) => {
+            this.ensureDestructiveOperation(`menghapus database ${databaseId} server ${serverId}`, confirm ?? false);
+            return this.request<unknown>({ api: "application", method: "DELETE", path: `/servers/${ensurePositiveInteger(serverId, "serverId")}/databases/${ensurePositiveInteger(databaseId, "databaseId")}` });
+          }
+        }
       },
       locations: {
         list: (page = 1) => this.request<unknown>({ api: "application", path: "/locations", query: { page } }),
         get: (id: number) => this.request<unknown>({ api: "application", path: `/locations/${ensurePositiveInteger(id, "locationId")}` }),
+        create: (data: Record<string, unknown>) => this.request<unknown>({ api: "application", method: "POST", path: "/locations", body: data }),
+        update: (id: number, data: Record<string, unknown>) =>
+          this.request<unknown>({ api: "application", method: "PATCH", path: `/locations/${ensurePositiveInteger(id, "locationId")}`, body: data }),
+        delete: (id: number, confirm?: boolean) => {
+          this.ensureDestructiveOperation(`menghapus location ${id}`, confirm ?? false);
+          return this.request<unknown>({ api: "application", method: "DELETE", path: `/locations/${ensurePositiveInteger(id, "locationId")}` });
+        },
         all: () => this.listAllPages<unknown>(page => this.application.locations.list(page))
+      },
+      tags: {
+        list: (page = 1) => this.request<unknown>({ api: "application", path: "/tags", query: { page } }),
+        get: (id: number) => this.request<unknown>({ api: "application", path: `/tags/${ensurePositiveInteger(id, "tagId")}` }),
+        all: () => this.listTags(),
+        find: (name: string) => this.findTagByName(name)
       },
       nests: {
         list: (page = 1) => this.request<unknown>({ api: "application", path: "/nests", query: { page } }),
@@ -226,10 +278,99 @@ export class PteroGateway {
     };
   }
 
+  get admin() {
+    const call = <T = unknown>(method: Parameters<HttpCore["request"]>[0]["method"], path: string, body?: unknown) =>
+      this.request<T>({ api: "admin", method, path, body, cache: method === "GET" });
+    return {
+      request: <T = unknown>(options: Omit<Parameters<HttpCore["request"]>[0], "api">) =>
+        this.request<T>({ ...options, api: "admin" } as Parameters<HttpCore["request"]>[0]),
+      version: () => this.request<unknown>({ api: "admin", path: "/version" }),
+      users: {
+        list: (page = 1, filters?: Record<string, string>) =>
+          this.request<unknown>({ api: "admin", path: "/users", query: { page, ...filters } }),
+        get: (id: number) => this.request<unknown>({ api: "admin", path: `/users/${ensurePositiveInteger(id, "userId")}` }),
+        all: (filters?: Record<string, string>) => this.listAllPages<unknown>(page => this.admin.users.list(page, filters))
+      },
+      servers: {
+        list: (page = 1, filters?: Record<string, string>) =>
+          this.request<unknown>({ api: "admin", path: "/servers", query: { page, ...filters } }),
+        get: (id: number) => this.request<unknown>({ api: "admin", path: `/servers/${ensurePositiveInteger(id, "serverId")}` }),
+        all: (filters?: Record<string, string>) => this.listAllPages<unknown>(page => this.admin.servers.list(page, filters)),
+        transfer: (id: number, data: Record<string, unknown>) => call("POST", `/servers/${ensurePositiveInteger(id, "serverId")}/transfer`, data)
+      },
+      nodes: {
+        list: (page = 1) => this.request<unknown>({ api: "admin", path: "/nodes", query: { page } }),
+        get: (id: number) => this.request<unknown>({ api: "admin", path: `/nodes/${ensurePositiveInteger(id, "nodeId")}` }),
+        all: () => this.listAllPages<unknown>(page => this.admin.nodes.list(page)),
+        allocations: {
+          list: (nodeId: number, page = 1) =>
+            this.request<unknown>({ api: "admin", path: `/nodes/${ensurePositiveInteger(nodeId, "nodeId")}/allocations`, query: { page } }),
+          all: (nodeId: number) => this.listAllPages<unknown>(page => this.admin.nodes.allocations.list(nodeId, page))
+        }
+      },
+      eggs: {
+        list: (page = 1) => this.request<unknown>({ api: "admin", path: "/eggs", query: { page } }),
+        get: (id: number) => this.request<unknown>({ api: "admin", path: `/eggs/${ensurePositiveInteger(id, "eggId")}` }),
+        all: () => this.listAllPages<unknown>(page => this.admin.eggs.list(page)),
+        create: (data: Record<string, unknown>) => call("POST", "/eggs", data),
+        update: (id: number, data: Record<string, unknown>) => call("PATCH", `/eggs/${ensurePositiveInteger(id, "eggId")}`, data),
+        delete: (id: number, confirm?: boolean) => {
+          this.ensureDestructiveOperation(`menghapus egg ${id}`, confirm ?? false);
+          return call("DELETE", `/eggs/${ensurePositiveInteger(id, "eggId")}`);
+        },
+        import: (data: EggImportInput) => call("POST", "/eggs/import", data)
+      },
+      tags: {
+        list: (page = 1) => this.request<unknown>({ api: "admin", path: "/tags", query: { page } }),
+        get: (id: number) => this.request<unknown>({ api: "admin", path: `/tags/${ensurePositiveInteger(id, "tagId")}` }),
+        all: () => this.listAllPages<unknown>(page => this.admin.tags.list(page)),
+        create: (data: Record<string, unknown>) => call("POST", "/tags", data),
+        update: (id: number, data: Record<string, unknown>) => call("PATCH", `/tags/${ensurePositiveInteger(id, "tagId")}`, data),
+        delete: (id: number, confirm?: boolean) => {
+          this.ensureDestructiveOperation(`menghapus tag ${id}`, confirm ?? false);
+          return call("DELETE", `/tags/${ensurePositiveInteger(id, "tagId")}`);
+        }
+      },
+      locations: {
+        list: (page = 1) => this.request<unknown>({ api: "admin", path: "/locations", query: { page } }),
+        all: () => this.listAllPages<unknown>(page => this.admin.locations.list(page))
+      },
+      databaseHosts: {
+        list: (page = 1) => this.request<unknown>({ api: "admin", path: "/database-hosts", query: { page } }),
+        all: () => this.listAllPages<unknown>(page => this.admin.databaseHosts.list(page))
+      },
+      mounts: {
+        list: (page = 1) => this.request<unknown>({ api: "admin", path: "/mounts", query: { page } }),
+        all: () => this.listAllPages<unknown>(page => this.admin.mounts.list(page))
+      },
+      extensions: {
+        list: () => this.request<unknown>({ api: "admin", path: "/extensions" })
+      },
+      settings: () => this.request<unknown>({ api: "admin", path: "/settings" })
+    };
+  }
+
   get client() {
     return {
       account: {
         get: () => this.request<unknown>({ api: "client", path: "/account" }),
+        activity: (page = 1) => this.request<unknown>({ api: "client", path: "/account/activity", query: { page } }),
+        updateEmail: (email: string, password: string) =>
+          this.request<unknown>({ api: "client", method: "PUT", path: "/account/email", body: { email, password } }),
+        updatePassword: (currentPassword: string, password: string) =>
+          this.request<unknown>({
+            api: "client",
+            method: "PUT",
+            path: "/account/password",
+            body: { current_password: currentPassword, password, password_confirmation: password }
+          }),
+        sshKeys: {
+          list: () => this.request<unknown>({ api: "client", path: "/account/ssh-keys" }),
+          create: (name: string, publicKey: string) =>
+            this.request<unknown>({ api: "client", method: "POST", path: "/account/ssh-keys", body: { name, public_key: publicKey } }),
+          delete: (fingerprint: string) =>
+            this.request<unknown>({ api: "client", method: "DELETE", path: `/account/ssh-keys/${encodeURIComponent(fingerprint)}` })
+        },
         twoFactor: {
           get: () => this.request<unknown>({ api: "client", path: "/account/two-factor" }),
           enable: (code: string) => this.request<unknown>({ api: "client", method: "POST", path: "/account/two-factor", body: { code } }),
@@ -297,37 +438,110 @@ export class PteroGateway {
   async connect(): Promise<ConnectResult> {
     const started = Date.now();
     this.logger.info(`Menghubungkan ke ${this.domain}.`);
-    const [application, client] = await Promise.all([this.checkApplicationKey(), this.checkClientKey()]);
+    const [application, client, admin] = await Promise.all([
+      this.checkApplicationKey(),
+      this.checkClientKey(),
+      this.checkAdminKey()
+    ]);
     const mode = this.resolveMode(application.valid, client.valid);
+    const info = await this.panelInfo().catch(() => undefined);
     const latency = Date.now() - started;
     if (mode === "invalid") this.logger.error("Koneksi panel gagal. Periksa domain dan API key.");
     else this.logger.success(`Terhubung dalam mode ${mode} (${latency}ms).`);
-    return { ok: mode !== "invalid", mode, domain: this.domain, latency, application, client };
+    return {
+      ok: mode !== "invalid",
+      mode,
+      domain: this.domain,
+      latency,
+      application,
+      client,
+      admin,
+      apiVersion: info?.apiVersion ?? "unknown",
+      panelVersion: info?.panelVersion
+    };
   }
 
   health(): Promise<ConnectResult> {
     return this.connect();
   }
 
+  async panel(refresh = false): Promise<PanelInfo> {
+    return this.panelInfo(refresh);
+  }
+
   async capabilities(): Promise<PanelCapabilities> {
     if (this.capabilitiesCache) return this.capabilitiesCache;
-    const [nests, eggs, applicationApi, clientApi] = await Promise.all([
-      this.probe("/nests", "application"),
-      this.probe("/eggs", "application"),
+    const info = await this.panelInfo();
+    const [applicationApi, clientApi, eggs, adminApi] = await Promise.all([
       this.probe("/users?page=1", "application"),
-      this.probe("/account", "client")
+      this.probe("/account", "client"),
+      info.apiVersion === "v2" ? this.probe("/eggs", "application") : Promise.resolve(false),
+      info.adminApi
     ]);
-    this.capabilitiesCache = { nests, eggs, applicationApi, clientApi };
+    this.capabilitiesCache = {
+      nests: info.nests,
+      eggs: eggs || info.nests,
+      applicationApi,
+      clientApi,
+      adminApi,
+      tags: info.tags,
+      apiVersion: info.apiVersion,
+      panelVersion: info.panelVersion
+    };
     return this.capabilitiesCache;
   }
 
-  private async probe(path: string, api: "application" | "client"): Promise<boolean> {
+  private async panelInfo(refresh = false): Promise<PanelInfo> {
+    if (this.profileCache && !refresh) return this.profileCache;
+    const versionPayload = this.adminKey ? await this.probeValue({ api: "admin", path: "/version", cache: false }) : undefined;
+    const [tags, nests] = await Promise.all([
+      this.probe("/tags", "application"),
+      this.probe("/nests", "application")
+    ]);
+    const version = asObject(versionPayload);
+    const panelVersion = typeof version.current === "string" && version.current.trim() ? version.current.trim() : undefined;
+    const adminApi = Object.keys(version).length > 0;
+    const apiVersion = this.resolveApiVersion(panelVersion, tags, nests, adminApi);
+    this.profileCache = {
+      apiVersion,
+      panelVersion,
+      latestVersion: typeof version.latest === "string" ? version.latest : undefined,
+      daemonVersion: typeof version.daemon === "string" ? version.daemon : undefined,
+      adminApi,
+      nests,
+      tags,
+      detectedAt: new Date().toISOString()
+    };
+    if (this.capabilitiesCache) this.capabilitiesCache = undefined;
+    return this.profileCache;
+  }
+
+  private resolveApiVersion(panelVersion: string | undefined, tags: boolean, nests: boolean, adminApi = false): PanelApiVersion {
+    if (this.apiVersionPreference !== "auto") return this.apiVersionPreference;
+    if (panelVersion) {
+      const major = Number(panelVersion.split(".")[0]);
+      if (Number.isFinite(major) && panelVersion !== "canary") return major >= 2 ? "v2" : "v1";
+    }
+    if (tags && !nests) return "v2";
+    if (adminApi && !nests) return "v2";
+    if (nests) return "v1";
+    return "v1";
+  }
+
+  private async probe(path: string, api: "application" | "client" | "admin"): Promise<boolean> {
     try {
       await this.request<unknown>({ api, path, cache: false, retryUnsafe: false });
       return true;
-    } catch (error) {
-      if (error instanceof PteroError && (error.status === 404 || error.code === "NOT_FOUND")) return false;
+    } catch {
       return false;
+    }
+  }
+
+  private async probeValue(options: Parameters<HttpCore["request"]>[0]): Promise<unknown> {
+    try {
+      return await this.request<unknown>(options);
+    } catch {
+      return undefined;
     }
   }
 
@@ -336,6 +550,8 @@ export class PteroGateway {
     const capabilities = await this.capabilities();
     const checks = [
       { name: "domain", ok: true, message: this.domain },
+      { name: "api_version", ok: capabilities.apiVersion !== "unknown", message: capabilities.apiVersion, fix: "Set apiVersion v1 atau v2 jika deteksi gagal" },
+      { name: "panel_version", ok: Boolean(capabilities.panelVersion), message: capabilities.panelVersion ?? "Tidak dapat dibaca tanpa Admin API" },
       { name: "ptla_provided", ok: Boolean(this.applicationKey), message: this.applicationKey ? maskSecret(this.applicationKey) : "PTLA kosong" },
       { name: "ptlc_provided", ok: Boolean(this.clientKey), message: this.clientKey ? maskSecret(this.clientKey) : "PTLC kosong" },
       {
@@ -346,16 +562,28 @@ export class PteroGateway {
       },
       { name: "client_api", ok: connect.client.valid, message: connect.client.message, fix: "Periksa PTLC dan permission Client API." },
       {
+        name: "admin_api",
+        ok: capabilities.adminApi || capabilities.apiVersion === "v1",
+        message: capabilities.adminApi ? "Tersedia" : capabilities.apiVersion === "v1" ? "Tidak ada pada Pterodactyl v1" : "Gunakan Client API key root administrator",
+        fix: capabilities.adminApi ? undefined : "Isi adminKey dengan Client API key root administrator"
+      },
+      {
         name: "nests_endpoint",
-        ok: capabilities.nests,
-        message: capabilities.nests ? "Tersedia" : "Tidak tersedia; gunakan egg ID langsung atau endpoint /eggs",
-        fix: capabilities.nests ? undefined : "Gunakan defaultNestId atau varian endpoint eggs"
+        ok: capabilities.nests || capabilities.tags,
+        message: capabilities.nests ? "Tersedia" : capabilities.tags ? "Digantikan tags pada Pterodactyl v2" : "Tidak tersedia; gunakan egg ID langsung",
+        fix: capabilities.nests || capabilities.tags ? undefined : "Gunakan defaultNestId atau varian endpoint eggs"
       },
       {
         name: "eggs_endpoint",
         ok: capabilities.eggs || capabilities.nests,
-        message: capabilities.eggs ? "Tersedia endpoint /eggs" : capabilities.nests ? "Tersedia melalui /nests" : "Tidak tersedia",
+        message: capabilities.eggs && capabilities.apiVersion === "v2" ? "Tersedia endpoint /eggs" : capabilities.nests ? "Tersedia melalui /nests" : "Tidak tersedia",
         fix: capabilities.eggs || capabilities.nests ? undefined : "Periksa versi panel"
+      },
+      {
+        name: "tags_endpoint",
+        ok: capabilities.tags || capabilities.nests,
+        message: capabilities.tags ? "Tersedia" : capabilities.nests ? "Tidak ada pada Pterodactyl v1" : "Tidak tersedia",
+        fix: capabilities.tags || capabilities.nests ? undefined : "Periksa permission Application API"
       }
     ];
     return { ok: connect.ok && (capabilities.eggs || capabilities.nests), mode: connect.mode, checks, capabilities };
@@ -367,21 +595,53 @@ export class PteroGateway {
 
   async listEggs(nestId?: number) {
     const capabilities = await this.capabilities();
-    if (nestId && capabilities.nests) {
-      try {
-        const items = await this.listAllPages<unknown>(page => this.request<unknown>({ api: "application", path: `/nests/${nestId}/eggs`, query: { page } }));
-        if (items.length > 0) return items;
-      } catch (error) {
-        if (!(error instanceof PteroError)) throw error;
+    if (capabilities.apiVersion === "v2") {
+      return this.listAllPages<unknown>(page =>
+        this.request<unknown>({ api: "application", path: "/eggs", query: { page, include: "variables,tags" } })
+      );
+    }
+    if (capabilities.nests) {
+      if (nestId) {
+        try {
+          const items = await this.listAllPages<unknown>(page => this.request<unknown>({ api: "application", path: `/nests/${nestId}/eggs`, query: { page } }));
+          if (items.length > 0) return items;
+        } catch (error) {
+          if (!(error instanceof PteroError) || error.status !== 404) throw error;
+        }
       }
+      const items: unknown[] = [];
+      for (const nest of await this.listNests()) {
+        const id = Number(getDataAttributes(nest).id ?? 0);
+        if (!id) continue;
+        items.push(...await this.listAllPages<unknown>(page => this.request<unknown>({ api: "application", path: `/nests/${id}/eggs`, query: { page } })));
+      }
+      if (items.length > 0) return items;
     }
     if (capabilities.eggs) {
-      return this.listAllPages<unknown>(page => this.request<unknown>({ api: "application", path: "/eggs", query: { page } }));
-    }
-    if (capabilities.nests && nestId) {
-      return this.listAllPages<unknown>(page => this.request<unknown>({ api: "application", path: `/nests/${nestId}/eggs`, query: { page } }));
+      return this.listAllPages<unknown>(page => this.request<unknown>({ api: "application", path: "/eggs", query: { page, include: "variables,tags" } }));
     }
     throw ErrorFactory.unsupported("Daftar egg");
+  }
+
+  async listTags() {
+    const capabilities = await this.capabilities();
+    if (!capabilities.tags) return [] as PteroTag[];
+    const items = await this.listAllPages<unknown>(page => this.request<unknown>({ api: "application", path: "/tags", query: { page } }));
+    return items.map(item => normalizeTag(item));
+  }
+
+  async findTagByName(name: string): Promise<PteroTag> {
+    const tags = await this.listTags();
+    const needle = name.trim().toLowerCase();
+    const match = tags.find(tag => tag.name.toLowerCase() === needle || tag.slug.toLowerCase() === needle);
+    if (match) return match;
+    const available = tags.map(tag => `ID ${tag.id} | ${tag.name}`).join("\n");
+    throw new PteroError({
+      code: "TAG_NOT_FOUND",
+      message: `Tag dengan nama '${name}' tidak ditemukan.`,
+      hint: `Tag tersedia:\n${available || "Tidak ada tag"}`,
+      steps: ["Periksa daftar tags di panel", "Gunakan tag ID langsung"]
+    });
   }
 
   async getEgg(nestId: number, eggId: number, includeVariables = true): Promise<unknown> {
@@ -390,17 +650,18 @@ export class PteroGateway {
       try {
         return await this.request<unknown>({
           api: "application",
-          path: `/nests/${nestId}/eggs/${eggId}${includeVariables ? "?include=variables" : ""}`,
+          path: `/nests/${ensurePositiveInteger(nestId, "nestId")}/eggs/${ensurePositiveInteger(eggId, "eggId")}${includeVariables ? "?include=variables" : ""}`,
           cache: false
         });
       } catch (error) {
         if (!(error instanceof PteroError) || error.status !== 404) throw error;
       }
     }
-    if (capabilities.eggs) {
+    if (capabilities.apiVersion === "v2" || capabilities.eggs) {
+      const include = includeVariables ? (capabilities.apiVersion === "v2" ? "?include=variables,tags" : "?include=variables") : "";
       return this.request<unknown>({
         api: "application",
-        path: `/eggs/${eggId}${includeVariables ? "?include=variables" : ""}`,
+        path: `/eggs/${ensurePositiveInteger(eggId, "eggId")}${include}`,
         cache: false
       });
     }
@@ -409,10 +670,17 @@ export class PteroGateway {
 
   async getEggById(eggId: number, includeVariables = true): Promise<unknown> {
     const capabilities = await this.capabilities();
+    if (capabilities.apiVersion === "v2") {
+      return this.request<unknown>({
+        api: "application",
+        path: `/eggs/${ensurePositiveInteger(eggId, "eggId")}${includeVariables ? "?include=variables,tags" : ""}`,
+        cache: false
+      });
+    }
     if (capabilities.eggs) {
       return this.request<unknown>({
         api: "application",
-        path: `/eggs/${eggId}${includeVariables ? "?include=variables" : ""}`,
+        path: `/eggs/${ensurePositiveInteger(eggId, "eggId")}${includeVariables ? "?include=variables" : ""}`,
         cache: false
       });
     }
@@ -458,7 +726,18 @@ export class PteroGateway {
 
   async findNestByName(name: string) {
     this.logger.info(`Mencari nest ${name}.`);
+    const capabilities = await this.capabilities();
     let data: unknown[];
+    if (capabilities.apiVersion === "v2") {
+      const tag = await this.findTagByName(name);
+      return {
+        id: tag.legacyNestId ?? tag.id,
+        tagId: tag.id,
+        name: tag.name,
+        description: "Pterodactyl v2 tag",
+        raw: tag.raw
+      };
+    }
     try {
       data = await this.listNests();
     } catch (error) {
@@ -497,10 +776,13 @@ export class PteroGateway {
     });
     if (match) {
       const attributes = getDataAttributes(match);
+      const tags = tagList(match);
       return {
         id: Number(attributes.id ?? 0),
         name: String(attributes.name ?? ""),
-        nestId: nestId ?? Number(attributes.nest ?? 0),
+        nestId: nestId ?? Number(attributes.nest ?? tags[0]?.legacyNestId ?? 0),
+        tagId: tags[0]?.id,
+        tagName: tags[0]?.name,
         raw: match
       };
     }
@@ -517,10 +799,12 @@ export class PteroGateway {
     const capabilities = await this.capabilities();
     let nestId = defaultNestId;
     let resolvedNestName = "";
+    let tag: PteroTag | undefined;
     if (nestName) {
       const nest = await this.findNestByName(nestName);
       nestId = nest.id;
       resolvedNestName = nest.name;
+      if ("tagId" in nest) tag = { id: Number(nest.tagId), name: nest.name, slug: slugify(nest.name), legacyNestId: nest.id, raw: nest.raw };
     } else if (capabilities.nests) {
       try {
         const nest = getDataAttributes(await this.application.nests.get(nestId));
@@ -530,15 +814,25 @@ export class PteroGateway {
       }
     }
 
-    const egg = eggName ? await this.findEggByName(nestId, eggName) : await this.getEgg(nestId, defaultEggId, true);
+    const egg = eggName
+      ? await this.findEggByName(capabilities.apiVersion === "v2" ? undefined : nestId, eggName)
+      : capabilities.apiVersion === "v2"
+        ? await this.getEggById(defaultEggId, true)
+        : await this.getEgg(nestId, defaultEggId, true);
     const eggAttributes = getDataAttributes(egg);
     const eggId = Number(eggAttributes.id ?? 0);
     if (!eggId) throw new PteroError({ code: "EGG_NOT_FOUND", message: "Egg tidak memiliki ID valid." });
+    const eggTags = tagList(egg);
+    if (!tag && eggTags.length > 0) tag = eggTags[0];
+    if (tag?.legacyNestId) nestId = tag.legacyNestId;
+    if (!resolvedNestName && tag) resolvedNestName = tag.name;
 
     return {
       nestId,
       eggId,
+      tagId: tag?.id,
       nestName: resolvedNestName,
+      tagName: tag?.name ?? "",
       eggName: String(eggAttributes.name ?? "")
     };
   }
@@ -695,18 +989,28 @@ export class PteroGateway {
 
   async getServerDetails(serverId: number) {
     this.logger.info(`Mengambil detail server ${serverId}.`);
+    const capabilities = await this.capabilities();
     const response = await this.application.servers.get(serverId);
     const attributes = getDataAttributes(response);
     const nodeId = Number(attributes.node ?? 0);
-    const nestId = Number(attributes.nest ?? this.defaultNestId);
     const eggId = Number(attributes.egg ?? 0);
     const userId = Number(attributes.user ?? 0);
-    const [node, nest, egg, user] = await Promise.allSettled([
+    const eggPromise = eggId
+      ? capabilities.apiVersion === "v2"
+        ? this.getEggById(eggId, false)
+        : this.getEgg(Number(attributes.nest ?? this.defaultNestId), eggId, false)
+      : Promise.reject(new Error("Server tidak memiliki egg."));
+    const [node, egg, user] = await Promise.allSettled([
       this.application.nodes.get(nodeId),
-      this.application.nests.get(nestId),
-      this.getEgg(nestId, eggId, false),
+      eggPromise,
       this.application.users.get(userId)
     ]);
+    const eggTags = egg.status === "fulfilled" ? tagList(egg.value) : [];
+    const eggAttributes = egg.status === "fulfilled" ? getDataAttributes(egg.value) : {};
+    const nestId = Number(attributes.nest ?? eggAttributes.nest ?? eggTags[0]?.legacyNestId ?? 0) || undefined;
+    const nest: Record<string, unknown> = capabilities.nests && nestId
+      ? await this.application.nests.get(nestId).then(value => getDataAttributes(value)).catch(() => ({}))
+      : {};
     const container = asObject(attributes.container);
     return {
       id: Number(attributes.id ?? 0),
@@ -718,8 +1022,11 @@ export class PteroGateway {
       suspended: Boolean(attributes.suspended),
       nodeId,
       nodeName: node.status === "fulfilled" ? String(getDataAttributes(node.value).name ?? "") : "",
+      apiVersion: capabilities.apiVersion,
       nestId,
-      nestName: nest.status === "fulfilled" ? String(getDataAttributes(nest.value).name ?? "") : "",
+      nestName: String(nest.name ?? eggTags[0]?.name ?? ""),
+      tagId: eggTags[0]?.id,
+      tagName: eggTags[0]?.name ?? "",
       eggId,
       eggName: egg.status === "fulfilled" ? String(getDataAttributes(egg.value).name ?? "") : "",
       userId,
@@ -1180,9 +1487,12 @@ export class PteroGateway {
     progress(options, "node", 30, "Mengambil node.");
     const node = await this.application.nodes.get(input.nodeId);
     progress(options, "egg", 45, "Mengambil nest dan egg.");
+    const capabilities = await this.capabilities();
     const nestId = input.nestId ?? this.defaultNestId;
-    const nest = await this.application.nests.get(nestId).catch(() => ({ data: { attributes: { id: nestId, name: "" } } }));
-    const egg = await this.getEgg(nestId, input.eggId, true);
+    const nest = capabilities.nests
+      ? await this.application.nests.get(nestId).catch(() => ({ data: { attributes: { id: nestId, name: "" } } }))
+      : { data: { attributes: { id: nestId, name: "" } } };
+    const egg = capabilities.apiVersion === "v2" ? await this.getEggById(input.eggId, true) : await this.getEgg(nestId, input.eggId, true);
     progress(options, "allocation", 60, "Mencari allocation port.");
     const allocationCount = specs.normalized.allocations || 1;
     const allocations = await this.application.nodes.allocations.all(input.nodeId);
@@ -1196,7 +1506,7 @@ export class PteroGateway {
     progress(options, "payload", 80, "Menyusun payload server.");
     const payload = buildServerPayload(
       { ...input, nestId },
-      { userId: user.id, rawEgg: egg, allocation, specs }
+      { userId: user.id, rawEgg: egg, allocation, specs, apiVersion: capabilities.apiVersion }
     );
     const nodeAttributes = getDataAttributes(node);
     const nestAttributes = getDataAttributes(nest);
@@ -1285,6 +1595,21 @@ export class PteroGateway {
       return { provided: true, valid: true, message: "PTLC valid." };
     } catch (error) {
       return { provided: true, valid: false, message: error instanceof Error ? error.message : "PTLC tidak valid." };
+    }
+  }
+
+  private async checkAdminKey() {
+    if (!this.adminKey) return { provided: false, valid: false, message: "Admin key kosong." };
+    try {
+      const version = asObject(await this.request<unknown>({ api: "admin", path: "/version", cache: false }));
+      return { provided: true, valid: true, message: typeof version.current === "string" ? `Admin API v${version.current}.` : "Admin API valid." };
+    } catch (error) {
+      const status = error instanceof PteroError ? error.status : undefined;
+      return {
+        provided: true,
+        valid: false,
+        message: status === 404 ? "Panel tidak menyediakan Admin API (Pterodactyl v1)." : error instanceof Error ? error.message : "Admin key tidak valid."
+      };
     }
   }
 
@@ -1396,6 +1721,27 @@ function missingEnvironmentFields(error: unknown): string[] {
     if (match) fields.add(match[1]!);
   }
   return [...fields].filter(Boolean);
+}
+
+function tagList(value: unknown): PteroTag[] {
+  const attributes = getDataAttributes(value);
+  const relationships = asObject(attributes.relationships);
+  return getCollection(asObject(relationships.tags))
+    .map(item => normalizeTag(item))
+    .filter(tag => tag.id > 0);
+}
+
+function normalizeTag(value: unknown): PteroTag {
+  const attributes = getDataAttributes(value);
+  return {
+    id: Number(attributes.id ?? 0),
+    name: String(attributes.name ?? ""),
+    slug: String(attributes.slug ?? ""),
+    color: typeof attributes.color === "string" ? attributes.color : undefined,
+    isPredefined: typeof attributes.is_predefined === "boolean" ? attributes.is_predefined : undefined,
+    legacyNestId: attributes.legacy_nest_id === null || attributes.legacy_nest_id === undefined ? undefined : Number(attributes.legacy_nest_id),
+    raw: value
+  };
 }
 
 function sanitizeFileName(value: string): string {

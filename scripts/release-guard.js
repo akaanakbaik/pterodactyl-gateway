@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const lock = JSON.parse(readFileSync("package-lock.json", "utf8"));
@@ -7,7 +8,12 @@ const version = pkg.version;
 const errors = [];
 
 if (!version) errors.push("package.json version kosong.");
-if (!/^\d+\.\d+\.\d+$/.test(version)) errors.push(`version harus semver stabil, ditemukan: ${version}`);
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) errors.push(`version harus semver valid, ditemukan: ${version}`);
+if (/-/.test(version) && !/^\d+\.\d+\.\d+-(?:alpha|beta|rc)(?:\.[0-9A-Za-z.-]+)?$/.test(version)) {
+  errors.push(`prerelease harus memakai label alpha, beta, atau rc: ${version}`);
+}
+const versionSource = existsSync("src/version.ts") ? readFileSync("src/version.ts", "utf8") : "";
+if (!versionSource.includes(`"${version}"`)) errors.push(`src/version.ts tidak memuat versi ${version}.`);
 if (lock.version !== version) errors.push(`package-lock.json version ${lock.version} tidak sama dengan package.json ${version}.`);
 if (lock.packages?.[""]?.version !== version) errors.push(`package-lock root version ${lock.packages?.[""]?.version} tidak sama dengan package.json ${version}.`);
 if (pkg.name !== "@akaanakbaik/pterodactyl-gateway") errors.push(`nama package tidak sesuai: ${pkg.name}`);
@@ -20,6 +26,7 @@ if (!pkg.bin?.["ptero-wizard"]) errors.push("bin ptero-wizard wajib ada.");
 if (!pkg.scripts?.prepublishOnly?.includes("verify")) errors.push("prepublishOnly wajib menjalankan verify.");
 if (!pkg.scripts?.verify?.includes("test:release")) errors.push("verify wajib menjalankan test:release.");
 if (!pkg.scripts?.verify?.includes("test:types")) errors.push("verify wajib menjalankan test:types.");
+if (!pkg.scripts?.verify?.includes("test:compat")) errors.push("verify wajib menjalankan test:compat.");
 if (!pkg.scripts?.["test:cli"]?.includes("version")) errors.push("test:cli wajib mengetes command version.");
 if (!pkg.scripts?.["test:cli"]?.includes("self-check")) errors.push("test:cli wajib mengetes command self-check.");
 if (!pkg.scripts?.["test:cli"]?.includes("release-check")) errors.push("test:cli wajib mengetes command release-check.");
@@ -41,6 +48,10 @@ if (exportEntry?.require?.types !== "./dist/index.d.cts") errors.push("exports.r
 for (const distFile of ["dist/index.js", "dist/index.cjs", "dist/index.d.ts", "dist/index.d.cts", "dist/cli-entry.js", "dist/wizard-cli.js"]) {
   if (!existsSync(distFile)) errors.push(`artefak build tidak ditemukan: ${distFile}`);
 }
+if (existsSync("dist/cli-entry.js")) {
+  const help = execFileSync(process.execPath, ["dist/cli-entry.js", "help"], { encoding: "utf8" });
+  if (!help.includes(`Pterodactyl Gateway CLI v${version}`)) errors.push(`help CLI tidak menampilkan versi ${version}.`);
+}
 
 const readme = existsSync("README.md") ? readFileSync("README.md", "utf8") : "";
 if (!readme.includes(version)) errors.push(`README.md wajib menyebut versi ${version}.`);
@@ -53,6 +64,12 @@ if (!changelog.includes(`## ${version}`)) errors.push(`CHANGELOG.md wajib memuat
 
 const workflow = existsSync(".github/workflows/publish.yml") ? readFileSync(".github/workflows/publish.yml", "utf8") : "";
 if (!workflow.includes("npm publish")) errors.push("workflow publish.yml wajib menjalankan npm publish.");
+if (!workflow.includes("dist-tag")) errors.push("workflow publish.yml wajib menentukan dist-tag untuk prerelease.");
+if (!workflow.includes("NPM_TOKEN")) errors.push("workflow publish.yml wajib memakai NPM_TOKEN.");
+
+const ciWorkflow = existsSync(".github/workflows/ci.yml") ? readFileSync(".github/workflows/ci.yml", "utf8") : "";
+if (!ciWorkflow.includes("npm ci")) errors.push("workflow ci.yml wajib memakai npm ci.");
+if (!ciWorkflow.includes("npm run verify")) errors.push("workflow ci.yml wajib menjalankan npm run verify.");
 
 if (errors.length) {
   console.error("Release guard gagal:");

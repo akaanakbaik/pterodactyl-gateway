@@ -1,5 +1,43 @@
 # CHANGELOG
 
+## 1.6.0-beta (2026-11-04)
+
+### Pterodactyl v2
+- Deteksi otomatis Pterodactyl v1, v2, dan build canary lewat Admin API `/api/admin/version`, endpoint tags, dan endpoint nests.
+- Dukungan Admin API v2 dengan `adminKey` atau `PTERO_ADMIN_KEY`, termasuk version, users, servers, nodes, eggs, tags, locations, database hosts, mounts, extensions, dan settings.
+- Tags menggantikan nest: `listTags`, `findTagByName`, `application.tags`, dan pemetaan `legacy_nest_id`.
+- Egg v2 dibaca dari `/api/application/eggs` dengan `include=variables,tags`; fallback v1 tetap memakai `/nests/{id}/eggs`.
+- Payload pembuatan server v2 tidak mengirim `nest`; detail server mengambil nama tag dari egg.
+- Opsi `apiVersion` untuk memaksa `v1` atau `v2` pada panel fork.
+
+### Fitur Application API
+- CRUD location dan create/update/delete node.
+- Pencarian server dan user berdasarkan `external_id`.
+- Manajemen database server: list, get, create, reset password, dan delete.
+- Namespace tags dan perluasan eggs.
+
+### Fitur Client API
+- Update email dan password akun, daftar activity akun, serta SSH key.
+- Subuser server: list, get, create, update, dan delete.
+- File manager: chmod, copy, dan pull dari URL.
+- Backup: restore dan toggle lock.
+- Ganti docker image server.
+
+### Perbaikan
+- `files.copy` mengirim `location` sesuai kontrak Pterodactyl; panel membuat salinan di folder yang sama dengan suffix `copy`.
+- File manager menulis Buffer biner tanpa mengubah isinya menjadi string.
+- Environment wajib yang sudah diisi user tidak lagi memicu `EGG_VARIABLE_REQUIRED`.
+- Fallback detail server membaca seluruh halaman Client API, bukan hanya halaman pertama.
+- `parseSizeToMiB` mempertahankan nilai `-1` sebagai unlimited swap.
+- Deteksi versi tidak lagi salah menganggap build `canary` sebagai v1.
+
+### Kualitas dan CI
+- 52 runtime test dan 11 test kompatibilitas v1/v2, termasuk fitur client baru.
+- CI matrix Node 20/22/24, laporan coverage, package smoke test, dependency review, dan CodeQL.
+- Workflow live test manual dengan secret panel dan pembersihan artefak.
+- Workflow publish mendukung prerelease dengan dist-tag `next`, validasi tag, dan publikasi idempoten.
+- Release guard menerima semver prerelease dan memeriksa konsistensi `src/version.ts`.
+
 ## 1.5.0 (2026-10-18)
 
 ### Rilis besar

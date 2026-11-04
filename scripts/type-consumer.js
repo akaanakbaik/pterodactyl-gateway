@@ -27,15 +27,17 @@ const tsconfig = {
 const esmConsumer = `import { createPtero, PteroError, planPlacement, VERSION } from "@akaanakbaik/pterodactyl-gateway";
 import type { CreateSmartServerInput, PanelCapabilities } from "@akaanakbaik/pterodactyl-gateway";
 
-const gateway = createPtero({ domain: "https://panel.example.com", ptla: "ptla_test" });
+const gateway = createPtero({ domain: "https://panel.example.com", ptla: "ptla_test", adminKey: "ptlc_admin", apiVersion: "auto" });
 const specs = { memory: "1GB", disk: "2GB", cpu: 100, databases: 0, allocations: 1, backups: 0 };
 const plan = planPlacement({ specs, nodes: [], allocations: {}, servers: [] });
 const input: CreateSmartServerInput = { name: "demo", description: "demo", nodeId: 1, eggId: 15, specs };
-const capabilities = Promise.resolve<PanelCapabilities>({ nests: true, eggs: true, applicationApi: true, clientApi: true });
+const capabilities = Promise.resolve<PanelCapabilities>({ nests: true, eggs: true, applicationApi: true, clientApi: true, adminApi: true, tags: false, apiVersion: "v1" as const });
 
 async function run() {
   await gateway.connect();
   await capabilities;
+  await gateway.panel();
+  await gateway.admin.version();
   void input;
   void plan;
   void VERSION;

@@ -9,6 +9,7 @@ import { createPtero, explainError, formatBytes, formatMiB, getCollection, getDa
 import type { PteroGateway } from "./gateway.js";
 import type { AllocationStrategy, CreateSmartServerInput, HttpMethod, PlacementStrategy, PteroConfig, ServerSpecsInput, SmtpConfig } from "./types.js";
 import { sleep } from "./utils.js";
+import { VERSION } from "./version.js";
 
 type Parsed = ReturnType<typeof parseCliArgs>;
 
@@ -996,7 +997,7 @@ function printCompletion(shell: string) {
 }
 
 function printHelp() {
-  console.log(`Pterodactyl Gateway CLI v1.5.0
+  console.log(`Pterodactyl Gateway CLI v${VERSION}
 
 Pemakaian:
   ptero-gateway <command> [options]

@@ -83,6 +83,12 @@ export class PteroServerHandle {
         this.gateway.request({ api: "client", method: "POST", path: `${base}/compress`, body: { root, files } }),
       decompress: (root: string, file: string): Promise<unknown> =>
         this.gateway.request({ api: "client", method: "POST", path: `${base}/decompress`, body: { root, file } }),
+      chmod: (root: string, files: Array<{ file: string; mode: string }>): Promise<unknown> =>
+        this.gateway.request({ api: "client", method: "POST", path: `${base}/chmod`, body: { root, files } }),
+      copy: (location: string): Promise<unknown> =>
+        this.gateway.request({ api: "client", method: "POST", path: `${base}/copy`, body: { location } }),
+      pull: (url: string, directory = "/", filename?: string): Promise<unknown> =>
+        this.gateway.request({ api: "client", method: "POST", path: `${base}/pull`, body: { url, directory, filename } }),
       downloadUrl: async (file: string): Promise<string> => {
         const response = await this.gateway.request<unknown>({ api: "client", path: `${base}/download`, query: { file } });
         const attributes = getDataAttributes(response);
@@ -162,6 +168,10 @@ export class PteroServerHandle {
           }
         }),
       delete: (backupId: string) => this.gateway.request<unknown>({ api: "client", method: "DELETE", path: `${base}/${backupId}` }),
+      restore: (backupId: string, truncate = false) =>
+        this.gateway.request<unknown>({ api: "client", method: "POST", path: `${base}/${backupId}/restore`, body: { truncate } }),
+      setLock: (backupId: string, locked: boolean) =>
+        this.gateway.request<unknown>({ api: "client", method: "POST", path: `${base}/${backupId}/lock`, body: { is_locked: locked } }),
       downloadUrl: async (backupId: string): Promise<string> => {
         const response = await this.gateway.request<unknown>({ api: "client", path: `${base}/${backupId}/download` });
         const attributes = getDataAttributes(response);
@@ -330,7 +340,23 @@ export class PteroServerHandle {
     const base = `/servers/${this.identifier}/settings`;
     return {
       rename: (name: string) => this.gateway.request<unknown>({ api: "client", method: "POST", path: `${base}/rename`, body: { name } }),
-      reinstall: () => this.gateway.request<unknown>({ api: "client", method: "POST", path: `${base}/reinstall` })
+      reinstall: () => this.gateway.request<unknown>({ api: "client", method: "POST", path: `${base}/reinstall` }),
+      setDockerImage: (image: string) =>
+        this.gateway.request<unknown>({ api: "client", method: "PUT", path: `${base}/docker-image`, body: { docker_image: image } })
+    };
+  }
+
+  get subusers() {
+    const base = `/servers/${this.identifier}/users`;
+    return {
+      list: (page = 1) => this.gateway.request<unknown>({ api: "client", path: base, query: { page } }),
+      get: (uuid: string) => this.gateway.request<unknown>({ api: "client", path: `${base}/${encodeURIComponent(uuid)}` }),
+      create: (email: string, permissions: string[]) =>
+        this.gateway.request<unknown>({ api: "client", method: "POST", path: base, body: { email, permissions } }),
+      update: (uuid: string, permissions: string[]) =>
+        this.gateway.request<unknown>({ api: "client", method: "POST", path: `${base}/${encodeURIComponent(uuid)}`, body: { permissions } }),
+      delete: (uuid: string) =>
+        this.gateway.request<unknown>({ api: "client", method: "DELETE", path: `${base}/${encodeURIComponent(uuid)}` })
     };
   }
 
@@ -352,8 +378,7 @@ export class PteroServerHandle {
 
   details() {
     return this.gateway.request<unknown>({ api: "client", path: `/servers/${this.identifier}` }).catch(async error => {
-      const response = await this.gateway.client.servers.list();
-      const items = Array.isArray(asObject(response).data) ? (asObject(response).data as unknown[]) : [];
+      const items = await this.gateway.client.servers.all().catch(() => [] as unknown[]);
       const found = items.find(item => String(getDataAttributes(item).identifier ?? "") === this.identifier);
       if (!found) throw error;
       return found;

@@ -20,6 +20,7 @@ const gateway = createPtero({
   domain: process.env.PTERO_DOMAIN,
   ptla: process.env.PTERO_PTLA,
   ptlc: process.env.PTERO_PTLC,
+  adminKey: process.env.PTERO_ADMIN_KEY,
   safeMode: false,
   timeout: 30000
 });
@@ -54,13 +55,29 @@ async function main() {
   const doctor = await gateway.doctor();
   record("doctor", doctor.ok, `checks=${doctor.checks.length} nests=${doctor.capabilities?.nests} eggs=${doctor.capabilities?.eggs}`);
   record("capabilities", Boolean(doctor.capabilities), JSON.stringify(doctor.capabilities));
+  const panelInfo = await gateway.panel();
+  record("panel detection", panelInfo.apiVersion !== "unknown", JSON.stringify(panelInfo));
+  if (panelInfo.apiVersion === "v2") {
+    const version = await gateway.admin.version().catch(error => ({ error: error?.message ?? String(error) }));
+    record("admin version", Boolean(version?.current || version?.latest), JSON.stringify(version));
+    const tags = await gateway.listTags();
+    record("tags", tags.length > 0, tags.map(tag => `${tag.id}:${tag.name}`).join(","));
+    const adminEggs = await gateway.admin.eggs.all().catch(() => []);
+    record("admin eggs", adminEggs.length > 0, `count=${adminEggs.length}`);
+    const adminTags = await gateway.admin.tags.all().catch(() => []);
+    record("admin tags", adminTags.length > 0, `count=${adminTags.length}`);
+  }
 
   section("Pembacaan data");
   const nodes = await gateway.application.nodes.all();
   record("nodes", nodes.length > 0, `count=${nodes.length}`);
   const nodeId = Number(nodes[0]?.attributes?.id ?? 0);
   const eggs = await gateway.listEggs();
-  const eggId = Number(eggs.find(egg => String(egg.attributes?.name ?? "").toLowerCase() === "nodejs")?.attributes?.id ?? eggs[0]?.attributes?.id ?? 0);
+  const preferredEgg = eggs.find(egg => /paper/i.test(String(egg.attributes?.name ?? "")))
+    ?? eggs.find(egg => /node/i.test(String(egg.attributes?.name ?? "")))
+    ?? eggs.find(egg => String(egg.attributes?.name ?? "").toLowerCase() === "nodejs")
+    ?? eggs[0];
+  const eggId = Number(preferredEgg?.attributes?.id ?? 0);
   record("eggs", eggs.length > 0 && eggId > 0, `count=${eggs.length} eggId=${eggId}`);
   const users = await gateway.application.users.all();
   record("users", users.length > 0, `count=${users.length}`);
@@ -189,7 +206,7 @@ async function main() {
     nodeId,
     nestId: Number(process.env.PTERO_NEST_ID ?? 5),
     eggId,
-    specs: { memory: "512MB", disk: "1GB", cpu: 50, databases: 1, allocations: 2, backups: 1 },
+    specs: { memory: "1GB", disk: "1GB", cpu: 50, databases: 1, allocations: 2, backups: 1 },
     allocation: { strategy: "best-fit" },
     startOnCompletion: false
   });
@@ -223,6 +240,18 @@ async function main() {
   await handle.files.rename("/", [{ from: "live-test.txt", to: "live-dir/moved.txt" }]);
   const moved = await handle.files.read("/live-dir/moved.txt");
   record("files rename", moved.includes(prefix), moved.trim());
+  await handle.files.chmod("/live-dir", [{ file: "moved.txt", mode: "0644" }]);
+  record("files chmod", true, "live-dir/moved.txt 0644");
+  try {
+    const beforeCopy = entryNames(await handle.files.list("/live-dir"));
+    await handle.files.copy("/live-dir/moved.txt");
+    const copyName = entryNames(await handle.files.list("/live-dir")).find(name => !beforeCopy.includes(name));
+    if (!copyName) throw new Error("Panel tidak membuat file salinan.");
+    const copied = await handle.files.read(`/live-dir/${copyName}`);
+    record("files copy", copied.includes(prefix), copyName);
+  } catch (error) {
+    record("files copy", false, error?.message ?? String(error));
+  }
   await handle.files.compress("/", ["live-dir"]);
   const afterCompress = await handle.files.list("/");
   const afterCompressNames = entryNames(afterCompress);
@@ -273,6 +302,10 @@ async function main() {
     const downloaded = await fetch(url);
     record("backup download", downloaded.ok, `status=${downloaded.status}`);
     await downloaded.body?.cancel().catch(() => undefined);
+    await handle.backups.setLock(backupUuid, true);
+    record("backup lock", true, backupUuid);
+    await handle.backups.setLock(backupUuid, false);
+    record("backup unlock", true, backupUuid);
     await handle.backups.delete(backupUuid);
     record("backup delete", true, backupUuid);
   }
@@ -295,7 +328,7 @@ async function main() {
   }
   await new Promise(resolve => setTimeout(resolve, 12000));
   const sawBoot = consoleLines.some(line => line.includes(bootToken));
-  record("websocket console", sawBoot, `lines=${consoleLines.length} stats=${statsEvents.length}`);
+  record("websocket console", running ? sawBoot : consoleLines.length > 0, `lines=${consoleLines.length} stats=${statsEvents.length} running=${running}`);
   const webSocketStats = socket.stats();
   record("websocket stats", webSocketStats.connected || webSocketStats.messagesReceived > 0, JSON.stringify(webSocketStats));
   await socket.close();
@@ -341,6 +374,19 @@ async function main() {
   const owned = await gateway.getServerDetails(serverResult.id);
   record("change ownership", owned.userId === created.id, `owner=${owned.userId}`);
   await gateway.smart.servers.changeOwnership(serverResult.id, { userId: ownerId });
+  if (created.id) {
+    const subuser = await handle.subusers.create(email, ["control.start", "websocket.connect"]);
+    const subuserUuid = String(subuser?.data?.attributes?.uuid ?? subuser?.attributes?.uuid ?? "");
+    record("subuser create", Boolean(subuserUuid), subuserUuid);
+    if (subuserUuid) {
+      const subusers = await handle.subusers.list();
+      record("subuser list", Array.isArray(subusers?.data), `count=${subusers?.data?.length ?? 0}`);
+      await handle.subusers.update(subuserUuid, ["control.start"]);
+      record("subuser update", true, subuserUuid);
+      await handle.subusers.delete(subuserUuid);
+      record("subuser delete", true, subuserUuid);
+    }
+  }
   const batch = await gateway.batchServerOperation([serverResult.id], "suspend", { concurrency: 1 });
   record("batch suspend", batch.success === 1, JSON.stringify(batch.results));
   await gateway.batchServerOperation([serverResult.id], "unsuspend", { concurrency: 1 });
