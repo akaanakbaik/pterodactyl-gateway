@@ -361,12 +361,13 @@ Jika panel meminta environment variable tertentu saat membuat server, gateway me
 
 Otomatis melalui GitHub Actions:
 
-1. Buka <https://github.com/akaanakbaik/pterodactyl-gateway/settings/secrets/actions> lalu tambahkan secret `NPM_TOKEN` berisi granular access token npm dengan izin publish pada package `@akaanakbaik/pterodactyl-gateway` dan opsi **Bypass 2FA** aktif. Token automation lama dapat ditolak dengan `E403 Two-factor authentication is required`.
-2. Buat tag versi: `git tag v1.6.0 && git push origin v1.6.0`.
-3. Workflow `.github/workflows/publish.yml` menjalankan `npm ci`, seluruh quality gate, lalu `npm publish --provenance --access public`. Versi prerelease otomatis memakai dist-tag `next`, versi stabil memakai `latest`.
-4. Publikasi idempoten: jika versi sudah ada di npm, workflow melewati langkah publish dan tidak menggagalkan rilis.
+1. Buka **Settings → Trusted publishing** pada package `@akaanakbaik/pterodactyl-gateway` di npmjs.com, lalu tambahkan GitHub Actions dengan owner `akaanakbaik`, repository `pterodactyl-gateway`, workflow `publish.yml`, environment kosong, dan izin **npm publish**.
+2. Pastikan repository memakai runner GitHub-hosted dan workflow memiliki `id-token: write`. Workflow `.github/workflows/publish.yml` sudah memenuhinya dan mencoba OIDC lebih dulu.
+3. Buat tag versi: `git tag v1.6.0 && git push origin v1.6.0`.
+4. Workflow menjalankan `npm ci`, seluruh quality gate, lalu `npm publish --provenance --access public`. Versi prerelease otomatis memakai dist-tag `next`, versi stabil memakai `latest`.
+5. Publikasi idempoten: jika versi sudah ada di npm, workflow melewati langkah publish dan tidak menggagalkan rilis.
 
-Alternatif tanpa token adalah Trusted Publishing: daftarkan repository dan workflow `publish.yml` pada halaman package di npmjs.com, lalu hapus secret `NPM_TOKEN`. Workflow sudah memakai `id-token: write` sehingga provenance dan autentikasi OIDC bekerja otomatis.
+Token `NPM_TOKEN` tetap didukung sebagai fallback, tetapi npm sekarang menolak publish langsung dari token automation yang memakai bypass 2FA (`E403 Two-factor authentication is required`). Gunakan Trusted Publishing untuk rilis otomatis. Konfigurasi pertama harus divalidasi dengan publish sukses dalam 2 hari.
 
 Uji workflow tanpa publikasi:
 

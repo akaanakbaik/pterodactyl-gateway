@@ -92,15 +92,15 @@ jobs:
         if: (github.event_name == 'push' || !inputs.dry-run) && steps.registry.outputs.exists == 'false'
         shell: bash
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
+          unset NODE_AUTH_TOKEN
           if npm publish --provenance --access public --tag ${{ steps.meta.outputs.tag }}; then
             exit 0
           fi
-          echo "Publish dengan NPM_TOKEN gagal; mencoba trusted publishing OIDC."
-          unset NODE_AUTH_TOKEN
-          npm publish --provenance --access public --tag ${{ steps.meta.outputs.tag }}
+          echo "Publish via trusted publishing OIDC gagal; mencoba NPM_TOKEN."
+          NODE_AUTH_TOKEN="$NPM_TOKEN" npm publish --provenance --access public --tag ${{ steps.meta.outputs.tag }}
 
       - name: Skip already published version
         if: steps.registry.outputs.exists == 'true'

@@ -13,11 +13,11 @@ Paket ini bernama `@akaanakbaik/pterodactyl-gateway` dan dipublikasikan sebagai 
 
 ### Sekali setup
 
-1. Login ke npm sebagai `akaanakbaik`, lalu buka <https://www.npmjs.com/settings/tokens> dan buat **Granular Access Token** dengan izin **Read and write** untuk package `@akaanakbaik/pterodactyl-gateway` (atau **Automation** token bila memakai akun klasik).
-2. Buka <https://github.com/akaanakbaik/pterodactyl-gateway/settings/secrets/actions>.
-3. Klik **New repository secret**, isi nama `NPM_TOKEN`, lalu tempel token npm tadi.
-4. Pastikan akun `akaanakbaik` adalah owner scope `@akaanakbaik` di npm. Bila belum, buat organization tersebut lebih dulu di <https://www.npmjs.com/org/create>.
-5. Bila memakai 2FA publish, gunakan token granular dengan bypass 2FA atau aktifkan **Require two-factor authentication for write actions** pada level token.
+1. Login ke npm sebagai `akaanakbaik`, lalu buka <https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway/access> dan pilih **Trusted Publisher**.
+2. Pilih **GitHub Actions**, isi owner `akaanakbaik`, repository `pterodactyl-gateway`, workflow `publish.yml`, environment kosong, dan aktifkan izin **npm publish**.
+3. Pastikan akun `akaanakbaik` adalah owner scope `@akaanakbaik` di npm. Bila belum, buat organization tersebut lebih dulu di <https://www.npmjs.com/org/create>.
+4. Workflow sudah memakai `id-token: write` dan Node 24, sehingga OIDC dan provenance aktif tanpa token jangka panjang. Konfigurasi trusted publisher harus dipakai untuk publish sukses pertama dalam 2 hari.
+5. Secret `NPM_TOKEN` hanya fallback. Jangan mengandalkan token automation dengan bypass 2FA karena npm menolaknya untuk publish langsung.
 
 ### Uji workflow tanpa mempublikasikan
 
@@ -54,12 +54,13 @@ Versi di `package.json`, `package-lock.json`, `src/version.ts`, README, dan CHAN
 
 ## Trusted Publishing tanpa token
 
-Cara ini menghindari penyimpanan token jangka panjang dan tetap menghasilkan provenance.
+Cara ini menghindari penyimpanan token jangka panjang dan tetap menghasilkan provenance. Ini jalur utama workflow.
 
 1. Buka <https://www.npmjs.com/package/@akaanakbaik/pterodactyl-gateway/access> lalu pilih **Trusted Publisher**.
 2. Pilih **GitHub Actions**, isi owner `akaanakbaik`, repository `pterodactyl-gateway`, workflow `publish.yml`, dan environment kosong.
-3. Hapus secret `NPM_TOKEN` bila sudah ada. Workflow tetap memakai `id-token: write` untuk OIDC.
-4. Pastikan runner memakai npm 11.5 atau lebih baru; workflow sudah memakai Node 24 yang memenuhinya.
+3. Aktifkan izin **npm publish** pada konfigurasi tersebut.
+4. Workflow mencoba OIDC lebih dulu, lalu memakai `NPM_TOKEN` hanya jika OIDC gagal.
+5. Pastikan runner memakai npm 11.5 atau lebih baru; workflow sudah memakai Node 24 yang memenuhinya.
 
 ## Cara manual dari VPS
 
@@ -102,7 +103,7 @@ node -e "console.log('cjs', require('@akaanakbaik/pterodactyl-gateway').VERSION)
 | --- | --- | --- |
 | `E401` / `ENEEDAUTH` | Token tidak valid | Perbarui secret `NPM_TOKEN` |
 | `E403` | Scope atau permission kurang | Pastikan token memiliki akses publish ke scope `@akaanakbaik` |
-| `E403 Two-factor authentication is required` | Token automation tidak boleh publish karena paket mewajibkan 2FA | Buat granular token dengan **Bypass 2FA**, perbarui secret `NPM_TOKEN`, atau aktifkan Trusted Publishing |
+| `E403 Two-factor authentication is required` | npm menolak publish langsung dari token automation/bypass 2FA | Aktifkan Trusted Publishing dan biarkan workflow memakai OIDC; token hanya fallback |
 | `EPUBLISHCONFLICT` | Versi sudah ada | Naikkan versi dengan `npm version patch` |
 | `release guard gagal` | Versi tidak sinkron | Samakan versi di semua file lalu jalankan `npm run verify` |
 | `provenance` gagal | Workflow tidak berjalan di GitHub Actions | Publikasikan melalui workflow, bukan lokal |
