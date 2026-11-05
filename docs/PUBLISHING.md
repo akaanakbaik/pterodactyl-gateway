@@ -6,8 +6,9 @@ Paket ini bernama `@akaanakbaik/pterodactyl-gateway` dan dipublikasikan sebagai 
 
 1. Naikkan versi dan perbarui changelog.
 2. Jalankan quality gate lokal.
-3. Buat tag versi.
-4. Workflow GitHub Actions memvalidasi dan mempublikasikan otomatis.
+3. Commit dan push ke `main`.
+4. Workflow GitHub Actions memvalidasi, mempublikasikan, menunggu registry, lalu membuat tag dan GitHub Release otomatis.
+5. Tag manual `v<versi>` tetap didukung untuk rilis yang dipicu langsung dari tag.
 
 ## Cara otomatis melalui GitHub Actions
 
@@ -37,18 +38,26 @@ Workflow akan menjalankan seluruh quality gate lalu `npm publish --dry-run` tanp
 npm version patch --no-git-tag-version
 npm run verify
 git add -A
-git commit -m "chore: rilis 1.5.1"
-git push
-git tag v1.5.1
-git push origin v1.5.1
+git commit -m "chore: rilis 1.6.1"
+git push origin main
 ```
 
 Workflow `.github/workflows/publish.yml` akan:
 
-1. Menjalankan `npm ci`.
+1. Menjalankan `npm ci` dan memeriksa versi yang sudah ada di npm.
 2. Menjalankan `npm run verify` (typecheck, source guard, unit test, type consumer, CLI test, pack test, release guard).
-3. Menjalankan `npm publish --provenance --access public`.
-4. Membuat GitHub Release dengan catatan changelog.
+3. Menjalankan `npm publish --provenance --access public` melalui OIDC, dengan `NPM_TOKEN` hanya sebagai fallback.
+4. Menunggu versi dan dist-tag muncul di registry npm.
+5. Membuat tag `v<versi>` dan GitHub Release dengan catatan changelog.
+
+Jika ingin memicu rilis dari tag, buat tag yang sama dengan versi `package.json`:
+
+```bash
+git tag v1.6.1
+git push origin v1.6.1
+```
+
+Semua publish memakai concurrency group yang sama agar tidak balapan. Jika versi sudah ada di npm, langkah publish dilewati dan workflow tetap boleh membuat atau memperbarui GitHub Release untuk tag tersebut.
 
 Versi di `package.json`, `package-lock.json`, `src/version.ts`, README, dan CHANGELOG harus sama. Release guard akan gagal jika tidak sinkron.
 
@@ -61,6 +70,7 @@ Cara ini menghindari penyimpanan token jangka panjang dan tetap menghasilkan pro
 3. Aktifkan izin **npm publish** pada konfigurasi tersebut.
 4. Workflow mencoba OIDC lebih dulu, lalu memakai `NPM_TOKEN` hanya jika OIDC gagal.
 5. Pastikan runner memakai npm 11.5 atau lebih baru; workflow sudah memakai Node 24 yang memenuhinya.
+6. Workflow berjalan otomatis dari push ke `main` dan dari tag `v*.*.*`; tidak perlu publish manual dari VPS.
 
 ## Cara manual dari VPS
 

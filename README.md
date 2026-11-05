@@ -363,9 +363,9 @@ Otomatis melalui GitHub Actions:
 
 1. Buka **Settings → Trusted publishing** pada package `@akaanakbaik/pterodactyl-gateway` di npmjs.com, lalu tambahkan GitHub Actions dengan owner `akaanakbaik`, repository `pterodactyl-gateway`, workflow `publish.yml`, environment kosong, dan izin **npm publish**.
 2. Pastikan repository memakai runner GitHub-hosted dan workflow memiliki `id-token: write`. Workflow `.github/workflows/publish.yml` sudah memenuhinya dan mencoba OIDC lebih dulu.
-3. Buat tag versi: `git tag v1.6.0 && git push origin v1.6.0`.
-4. Workflow menjalankan `npm ci`, seluruh quality gate, lalu `npm publish --provenance --access public`. Versi prerelease otomatis memakai dist-tag `next`, versi stabil memakai `latest`.
-5. Publikasi idempoten: jika versi sudah ada di npm, workflow melewati langkah publish dan tidak menggagalkan rilis.
+3. Naikkan versi, perbarui changelog, commit, lalu push ke `main`. Workflow otomatis menjalankan `npm ci`, seluruh quality gate, dan `npm publish --provenance --access public` bila versi tersebut belum ada di npm. Versi prerelease memakai dist-tag `next`, versi stabil memakai `latest`.
+4. Workflow menunggu versi dan dist-tag benar-benar muncul di registry, lalu membuat tag `v<versi>` dan GitHub Release dari commit `main` tersebut.
+5. Tag manual `v<versi>` tetap didukung. Semua publish diserialkan dan idempoten: jika versi sudah ada di npm, langkah publish dilewati tanpa menggagalkan rilis.
 
 Token `NPM_TOKEN` tetap didukung sebagai fallback, tetapi npm sekarang menolak publish langsung dari token automation yang memakai bypass 2FA (`E403 Two-factor authentication is required`). Gunakan Trusted Publishing untuk rilis otomatis. Konfigurasi pertama harus divalidasi dengan publish sukses dalam 2 hari.
 

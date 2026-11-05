@@ -66,6 +66,9 @@ const workflow = existsSync(".github/workflows/publish.yml") ? readFileSync(".gi
 if (!workflow.includes("npm publish")) errors.push("workflow publish.yml wajib menjalankan npm publish.");
 if (!workflow.includes("dist-tag")) errors.push("workflow publish.yml wajib menentukan dist-tag untuk prerelease.");
 if (!workflow.includes("NPM_TOKEN")) errors.push("workflow publish.yml wajib memakai NPM_TOKEN.");
+if (!workflow.includes("- main")) errors.push("workflow publish.yml wajib berjalan otomatis dari push ke main.");
+if (!workflow.includes("Verify npm publication")) errors.push("workflow publish.yml wajib memverifikasi versi yang sudah terbit di npm.");
+if (!workflow.includes("tag_name:")) errors.push("workflow publish.yml wajib membuat tag rilis otomatis.");
 
 const ciWorkflow = existsSync(".github/workflows/ci.yml") ? readFileSync(".github/workflows/ci.yml", "utf8") : "";
 if (!ciWorkflow.includes("npm ci")) errors.push("workflow ci.yml wajib memakai npm ci.");
