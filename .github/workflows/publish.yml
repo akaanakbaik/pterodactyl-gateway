@@ -88,7 +88,7 @@ jobs:
 
       - name: Publish dry run
         if: github.event_name == 'workflow_dispatch' && inputs['dry-run']
-        run: npm publish --dry-run --access public --tag ${{ steps.meta.outputs.tag }}
+        run: npm publish --dry-run --force --access public --tag ${{ steps.meta.outputs.tag }}
 
       - name: Publish to npm
         id: publish
