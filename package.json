@@ -111,7 +111,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "nodemailer": "^10.1.2",
+    "nodemailer": "^10.1.4",
     "ws": "^8.22.0"
   }
 }
